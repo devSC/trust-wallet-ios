@@ -1,8 +1,9 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
 import Result
+import TrustCore
 import TrustKeystore
 
 protocol BackupCoordinatorDelegate: class {
@@ -10,16 +11,16 @@ protocol BackupCoordinatorDelegate: class {
     func didFinish(wallet: Wallet, in coordinator: BackupCoordinator)
 }
 
-class BackupCoordinator: Coordinator {
+final class BackupCoordinator: Coordinator {
 
-    let navigationController: UINavigationController
+    let navigationController: NavigationController
     weak var delegate: BackupCoordinatorDelegate?
     let keystore: Keystore
     let account: Account
     var coordinators: [Coordinator] = []
 
     init(
-        navigationController: UINavigationController,
+        navigationController: NavigationController,
         keystore: Keystore,
         account: Account
     ) {
@@ -36,14 +37,14 @@ class BackupCoordinator: Coordinator {
     func finish(result: Result<Bool, AnyError>) {
         switch result {
         case .success:
-            delegate?.didFinish(wallet: Wallet(type: .privateKey(account)), in: self)
+            delegate?.didFinish(wallet: account.wallet!, in: self)
         case .failure:
             delegate?.didCancel(coordinator: self)
         }
     }
 
     func presentActivityViewController(for account: Account, password: String, newPassword: String, completion: @escaping (Result<Bool, AnyError>) -> Void) {
-        navigationController.displayLoading(
+        navigationController.topViewController?.displayLoading(
             text: NSLocalizedString("export.presentBackupOptions.label.title", value: "Preparing backup options...", comment: "")
         )
         keystore.export(account: account, password: password, newPassword: newPassword) { [weak self] result in
@@ -62,23 +63,26 @@ class BackupCoordinator: Coordinator {
                 return completion(.failure(AnyError(error)))
             }
 
-            let activityViewController = UIActivityViewController(
-                activityItems: [url],
-                applicationActivities: nil
-            )
+            let activityViewController = UIActivityViewController.make(items: [url])
             activityViewController.completionWithItemsHandler = { _, result, _, error in
-                do { try FileManager.default.removeItem(at: url)
-            } catch { }
-                completion(.success(result))
+                do {
+                    try FileManager.default.removeItem(at: url)
+                } catch { }
+                guard let error = error else {
+                    return completion(.success(result))
+                }
+                completion(.failure(AnyError(error)))
             }
-            activityViewController.popoverPresentationController?.sourceView = navigationController.view
-            activityViewController.popoverPresentationController?.sourceRect = navigationController.view.centerRect
-            navigationController.present(activityViewController, animated: true) { [unowned self] in
-                self.navigationController.hideLoading()
+            let presenterViewController = navigationController.topViewController
+
+            activityViewController.popoverPresentationController?.sourceView = presenterViewController?.view
+            activityViewController.popoverPresentationController?.sourceRect = presenterViewController?.view.centerRect ?? .zero
+            presenterViewController?.present(activityViewController, animated: true) { [weak presenterViewController] in
+                presenterViewController?.hideLoading()
             }
         case .failure(let error):
-            navigationController.hideLoading()
-            navigationController.displayError(error: error)
+            navigationController.topViewController?.hideLoading()
+            navigationController.topViewController?.displayError(error: error)
         }
     }
 
@@ -105,7 +109,7 @@ extension BackupCoordinator: EnterPasswordCoordinatorDelegate {
 
     func didEnterPassword(password: String, account: Account, in coordinator: EnterPasswordCoordinator) {
         coordinator.navigationController.dismiss(animated: true) { [unowned self] in
-            if let currentPassword = self.keystore.getPassword(for: account) {
+            if let currentPassword = self.keystore.getPassword(for: account.wallet!) {
                 self.presentShareActivity(for: account, password: currentPassword, newPassword: password)
             } else {
                 self.presentShareActivity(for: account, password: password, newPassword: password)

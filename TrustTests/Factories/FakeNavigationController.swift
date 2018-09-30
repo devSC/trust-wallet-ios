@@ -1,9 +1,10 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
+@testable import Trust
 
-class FakeNavigationController: UINavigationController {
+class FakeNavigationController: NavigationController {
 
     private var _presentedViewController: UIViewController?
 

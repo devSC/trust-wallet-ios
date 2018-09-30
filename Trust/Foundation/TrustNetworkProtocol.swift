@@ -1,11 +1,8 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Moya
+import TrustCore
 
 protocol TrustNetworkProtocol {
-    var provider: MoyaProvider<TrustService> { get }
-    var balanceService: TokensBalanceService { get }
-    var account: Wallet { get }
-    var config: Config { get }
-    init(provider: MoyaProvider<TrustService>, balanceService: TokensBalanceService, account: Wallet, config: Config)
+    var provider: MoyaProvider<TrustAPI> { get }
 }

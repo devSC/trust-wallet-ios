@@ -1,8 +1,8 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import UIKit
 
-class TransactionViewCell: UITableViewCell {
+final class TransactionViewCell: UITableViewCell {
 
     static let identifier = "TransactionTableViewCell"
 
@@ -25,38 +25,40 @@ class TransactionViewCell: UITableViewCell {
         amountLabel.textAlignment = .right
         amountLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let leftStackView = UIStackView(arrangedSubviews: [titleLabel, subTitleLabel])
-        leftStackView.translatesAutoresizingMaskIntoConstraints = false
-        leftStackView.axis = .vertical
-        leftStackView.distribution = .fillProportionally
-        leftStackView.spacing = 6
+        let titlesStackView = UIStackView(arrangedSubviews: [titleLabel, subTitleLabel])
+        titlesStackView.translatesAutoresizingMaskIntoConstraints = false
+        titlesStackView.axis = .vertical
+        titlesStackView.distribution = .fillProportionally
+        titlesStackView.spacing = 8
 
         let rightStackView = UIStackView(arrangedSubviews: [amountLabel])
         rightStackView.translatesAutoresizingMaskIntoConstraints = false
         rightStackView.axis = .vertical
 
-        let stackView = UIStackView(arrangedSubviews: [statusImageView, leftStackView, rightStackView])
+        let stackView = UIStackView(arrangedSubviews: [
+            statusImageView,
+            titlesStackView,
+            rightStackView,
+        ])
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .horizontal
-        stackView.spacing = 15
+        stackView.spacing = TransactionStyleLayout.stackViewSpacing
         stackView.distribution = .fill
 
-        statusImageView.setContentHuggingPriority(UILayoutPriority.defaultLow, for: .horizontal)
-        subTitleLabel.setContentHuggingPriority(UILayoutPriority.defaultLow, for: .horizontal)
-        titleLabel.setContentHuggingPriority(UILayoutPriority.defaultLow, for: .horizontal)
-
-        amountLabel.setContentHuggingPriority(UILayoutPriority.required, for: .horizontal)
-        stackView.setContentHuggingPriority(UILayoutPriority.required, for: .horizontal)
-
-        addSubview(stackView)
+        contentView.addSubview(stackView)
 
         NSLayoutConstraint.activate([
-            statusImageView.widthAnchor.constraint(lessThanOrEqualToConstant: 44),
+            statusImageView.widthAnchor.constraint(lessThanOrEqualToConstant: TransactionStyleLayout.preferedImageSize),
             stackView.topAnchor.constraint(equalTo: topAnchor, constant: StyleLayout.sideMargin),
-            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -StyleLayout.sideMargin),
+            stackView.leadingAnchor.constraint(equalTo: layoutGuide.leadingAnchor, constant: StyleLayout.sideCellMargin),
+            stackView.trailingAnchor.constraint(equalTo: layoutGuide.trailingAnchor, constant: -StyleLayout.sideCellMargin),
             stackView.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -StyleLayout.sideMargin),
-            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: StyleLayout.sideMargin),
         ])
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateSeparatorInset()
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -73,8 +75,18 @@ class TransactionViewCell: UITableViewCell {
         subTitleLabel.textColor = viewModel.subTitleTextColor
         subTitleLabel.font = viewModel.subTitleFont
 
-        amountLabel.attributedText = viewModel.amountAttributedString
+        amountLabel.text = viewModel.amountText
+        amountLabel.font = viewModel.amountFont
+        amountLabel.textColor = viewModel.amountTextColor
 
         backgroundColor = viewModel.backgroundColor
+    }
+
+    private func updateSeparatorInset() {
+        separatorInset = UIEdgeInsets(
+            top: 0,
+            left: layoutInsets.left + StyleLayout.sideCellMargin + TransactionStyleLayout.preferedImageSize + TransactionStyleLayout.stackViewSpacing,
+            bottom: 0, right: 0
+        )
     }
 }

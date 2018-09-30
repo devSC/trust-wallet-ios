@@ -1,27 +1,36 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import RealmSwift
-import TrustKeystore
+import TrustCore
+import PromiseKit
 
-struct NonFungibleTokenViewModel {
+final class NonFungibleTokenViewModel {
 
     let config: Config
     let storage: TokensDataStore
     var tokensNetwork: NetworkProtocol
-    let tokens: Results<NonFungibleTokenCategory>
+    let tokens: Results<CollectibleTokenCategory>
     var tokensObserver: NotificationToken?
     let address: Address
+
+    var title: String {
+        return R.string.localizable.collectibles()
+    }
 
     var headerBackgroundColor: UIColor {
         return UIColor(hex: "fafafa")
     }
 
     var headerTitleTextColor: UIColor {
-        return UIColor(hex: "555357")
+        return AppStyle.collactablesHeader.textColor
+    }
+
+    var tableViewBacgroundColor: UIColor {
+        return UIColor.white
     }
 
     var headerTitleFont: UIFont {
-        return UIFont.systemFont(ofSize: 14, weight: UIFont.Weight.medium)
+        return AppStyle.collactablesHeader.font
     }
 
     var headerBorderColor: UIColor {
@@ -30,6 +39,10 @@ struct NonFungibleTokenViewModel {
 
     var hasContent: Bool {
         return !tokens.isEmpty
+    }
+
+    var cellHeight: CGFloat {
+        return 240
     }
 
     init(
@@ -45,29 +58,37 @@ struct NonFungibleTokenViewModel {
         self.tokens = storage.nonFungibleTokens
     }
 
-    func fetchAssets( completion: @escaping (_ result: Bool) -> Void) {
-        self.tokensNetwork.assets { assets in
-            guard let tokens = assets else { return }
-            completion(tokens.isEmpty)
-            self.storage.add(tokens: tokens)
+    func fetchAssets() -> Promise<[CollectibleTokenCategory]> {
+        return Promise { seal in
+            firstly {
+                tokensNetwork.collectibles()
+            }.done { [weak self] tokens in
+                self?.storage.add(tokens: tokens)
+                seal.fulfill(tokens)
+            }.catch { error in
+                seal.reject(error)
+            }
         }
     }
 
-    mutating func setTokenObservation(with block: @escaping (RealmCollectionChange<Results<NonFungibleTokenCategory>>) -> Void) {
+    func setTokenObservation(with block: @escaping (RealmCollectionChange<Results<CollectibleTokenCategory>>) -> Void) {
         tokensObserver = tokens.observe(block)
     }
 
-    func token(for path: IndexPath) -> NonFungibleTokenObject {
+    func token(for path: IndexPath) -> CollectibleTokenObject {
         return tokens[path.section].items[path.row]
     }
 
+    func tokens(for path: IndexPath) -> [CollectibleTokenObject] {
+        return Array(tokens[path.section].items)
+    }
+
     func cellViewModel(for path: IndexPath) -> NonFungibleTokenCellViewModel {
-        let token = self.token(for: path)
-        return NonFungibleTokenCellViewModel(token: token)
+        return NonFungibleTokenCellViewModel(tokens: tokens(for: path))
     }
 
     func numberOfItems(in section: Int) -> Int {
-        return tokens[section].items.count
+        return 1
     }
 
     func numberOfSections() -> Int {
@@ -76,5 +97,10 @@ struct NonFungibleTokenViewModel {
 
     func title(for section: Int) -> String {
         return tokens[section].name
+    }
+
+    func invalidateTokensObservation() {
+        tokensObserver?.invalidate()
+        tokensObserver = nil
     }
 }

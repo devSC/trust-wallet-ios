@@ -1,13 +1,14 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import BigInt
 @testable import Trust
+import TrustCore
 import TrustKeystore
 import XCTest
 
 class TransactionSigningTests: XCTestCase {
     func testEIP155SignHash() {
-        let address = Address(string: "0x3535353535353535353535353535353535353535")!
+        let address = EthereumAddress(string: "0x3535353535353535353535353535353535353535")!
         let transaction = SignTransaction(
             value: BigInt("1000000000000000000"),
             account: .make(address: address),
@@ -16,7 +17,9 @@ class TransactionSigningTests: XCTestCase {
             data: Data(),
             gasPrice: BigInt("20000000000"),
             gasLimit: BigInt("21000"),
-            chainID: 1)
+            chainID: 1,
+            localizedObject: .none
+        )
         let signer = EIP155Signer(chainId: 1)
         let hash = signer.hash(transaction: transaction)
 
@@ -24,7 +27,7 @@ class TransactionSigningTests: XCTestCase {
     }
 
     func testHomesteadSignHash() {
-        let address = Address(string: "0x3535353535353535353535353535353535353535")!
+        let address = EthereumAddress(string: "0x3535353535353535353535353535353535353535")!
         let transaction = SignTransaction(
             value: BigInt("1000000000000000000"),
             account: .make(address: address),
@@ -33,7 +36,9 @@ class TransactionSigningTests: XCTestCase {
             data: Data(),
             gasPrice: BigInt("20000000000"),
             gasLimit: BigInt("21000"),
-            chainID: 1)
+            chainID: 1,
+            localizedObject: .none
+        )
         let signer = HomesteadSigner()
         let hash = signer.hash(transaction: transaction)
 
@@ -41,16 +46,17 @@ class TransactionSigningTests: XCTestCase {
     }
 
     func testSignTransaction() {
-        let account: Account = .make(address: Address(data: Data(repeating: 0, count: 20)))
+        let account: Account = .make(address: EthereumAddress(data: Data(repeating: 0, count: 20))!)
         let transaction = SignTransaction(
             value: BigInt("1000000000000000000"),
             account: account,
-            to: Address(string: "0x3535353535353535353535353535353535353535")!,
+            to: EthereumAddress(string: "0x3535353535353535353535353535353535353535")!,
             nonce: 9,
             data: Data(),
             gasPrice: BigInt(20000000000),
             gasLimit: BigInt(21000),
-            chainID: 1
+            chainID: 1,
+            localizedObject: .none
         )
 
         let signer = EIP155Signer(chainId: 1)

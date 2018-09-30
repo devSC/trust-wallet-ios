@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import UIKit
 
@@ -6,10 +6,10 @@ protocol LockCreatePasscodeCoordinatorDelegate: class {
     func didCancel(in coordinator: LockCreatePasscodeCoordinator)
 }
 
-class LockCreatePasscodeCoordinator: Coordinator {
+final class LockCreatePasscodeCoordinator: Coordinator {
     var coordinators: [Coordinator] = []
     private let model: LockCreatePasscodeViewModel
-    let navigationController: UINavigationController
+    let navigationController: NavigationController
     weak var delegate: LockCreatePasscodeCoordinatorDelegate?
 
     lazy var lockViewController: LockCreatePasscodeViewController = {
@@ -19,7 +19,7 @@ class LockCreatePasscodeCoordinator: Coordinator {
     }()
 
     init(
-        navigationController: UINavigationController = NavigationController(),
+        navigationController: NavigationController = NavigationController(),
         model: LockCreatePasscodeViewModel
     ) {
         self.navigationController = navigationController

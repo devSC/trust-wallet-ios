@@ -1,14 +1,16 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
 
-class NFTDetailsViewModel {
+final class NFTDetailsViewModel {
 
-    let token: NonFungibleTokenObject
+    let token: CollectibleTokenObject
+    let server: RPCServer
 
-    init(token: NonFungibleTokenObject) {
+    init(token: CollectibleTokenObject, server: RPCServer) {
         self.token = token
+        self.server = server
     }
 
     var title: String {
@@ -27,6 +29,14 @@ class NFTDetailsViewModel {
         return token.imageURL
     }
 
+    var placeholder: UIImage? {
+        return R.image.launch_screen_logo()
+    }
+
+    var sendButtonTitle: String {
+        return R.string.localizable.send()
+    }
+
     var internalButtonTitle: String {
         return String(format: NSLocalizedString("nft.details.internal.button.title", value: "Open on %@", comment: ""), token.category)
     }
@@ -40,6 +50,6 @@ class NFTDetailsViewModel {
     }
 
     var externalURL: URL? {
-        return URL(string: "https://opensea.io/assets/\(token.contract)/\(token.id)")
+        return server.opensea(with: token.contract, and: token.id)
     }
 }

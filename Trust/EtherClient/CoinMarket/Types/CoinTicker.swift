@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import RealmSwift
@@ -19,7 +19,6 @@ extension CoinTicker {
 
     func rate() -> CurrencyRate {
         return CurrencyRate(
-            currency: symbol,
             rates: [
                 Rate(
                     code: symbol,

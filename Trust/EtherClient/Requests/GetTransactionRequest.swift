@@ -1,8 +1,8 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import JSONRPCKit
-import TrustKeystore
+import TrustCore
 
 struct GetTransactionRequest: JSONRPCKit.Request {
     typealias Response = PendingTransaction

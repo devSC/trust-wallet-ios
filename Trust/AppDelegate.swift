@@ -1,8 +1,8 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import UIKit
-import Lokalise
 import Branch
+import RealmSwift
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate, UISplitViewControllerDelegate {
@@ -15,13 +15,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UISplitViewControllerDele
     let urlNavigatorCoordinator = URLNavigatorCoordinator()
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplicationLaunchOptionsKey: Any]?) -> Bool {
         window = UIWindow(frame: UIScreen.main.bounds)
-        if !UIApplication.shared.isProtectedDataAvailable {
-            print("WARNING: data protection disabled")
-        }
 
-        let keystore = EtherKeystore.shared
-        coordinator = AppCoordinator(window: window!, keystore: keystore, navigator: urlNavigatorCoordinator.navigator)
+        let sharedMigration = SharedMigrationInitializer()
+        sharedMigration.perform()
+        let realm = try! Realm(configuration: sharedMigration.config)
+        let walletStorage = WalletStorage(realm: realm)
+        let keystore = EtherKeystore(storage: walletStorage)
+
+        coordinator = AppCoordinator(window: window!, keystore: keystore, navigator: urlNavigatorCoordinator)
         coordinator.start()
+
+        if !UIApplication.shared.isProtectedDataAvailable {
+            fatalError()
+        }
 
         protectionCoordinator.didFinishLaunchingWithOptions()
         urlNavigatorCoordinator.branch.didFinishLaunchingWithOptions(launchOptions: launchOptions)
@@ -34,11 +40,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UISplitViewControllerDele
 
     func applicationWillResignActive(_ application: UIApplication) {
         protectionCoordinator.applicationWillResignActive()
+        Lock().setAutoLockTime()
+        CookiesStore.save()
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        Lokalise.shared.checkForUpdates { _, _ in }
         protectionCoordinator.applicationDidBecomeActive()
+        CookiesStore.load()
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
@@ -56,16 +64,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UISplitViewControllerDele
         return true
     }
 
-    func application(
-        _ application: UIApplication,
-        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
-        Branch.getInstance().handlePushNotification(userInfo)
-    }
+//    func application(
+//        _ application: UIApplication,
+//        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+//        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+//        Branch.getInstance().handlePushNotification(userInfo)
+//    }
 
     // Respond to URI scheme links
-    func application(_ application: UIApplication, open url: URL, sourceApplication: String?, annotation: Any) -> Bool {
-        return urlNavigatorCoordinator.application(application, open: url, sourceApplication: sourceApplication, annotation: annotation)
+    func application(_ app: UIApplication, open url: URL, options: [UIApplicationOpenURLOptionsKey: Any] = [:]) -> Bool {
+        return urlNavigatorCoordinator.application(app, open: url, options: options)
     }
 
     // Respond to Universal Links

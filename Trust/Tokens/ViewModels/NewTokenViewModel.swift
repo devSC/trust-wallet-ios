@@ -1,12 +1,22 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
+import PromiseKit
 
 struct NewTokenViewModel {
-    let token: ERC20Token?
 
-    init(token: ERC20Token?) {
+    private var tokensNetwork: NetworkProtocol
+    let token: ERC20Token?
+    private let session: WalletSession
+
+    init(
+        token: ERC20Token?,
+        session: WalletSession,
+        tokensNetwork: NetworkProtocol
+    ) {
         self.token = token
+        self.session = session
+        self.tokensNetwork = tokensNetwork
     }
 
     var title: String {
@@ -33,5 +43,35 @@ struct NewTokenViewModel {
     var decimals: String {
         guard let decimals = token?.decimals else { return "" }
         return "\(decimals)"
+    }
+
+    var networkSelectorAvailable: Bool {
+        return networks.count > 1
+    }
+
+    var network: RPCServer {
+        guard let server = token?.coin.server else {
+            if networkSelectorAvailable {
+                return .main
+            }
+            return session.account.currentAccount.coin?.server ?? .main
+        }
+        return server
+    }
+
+    var networks: [RPCServer] {
+        return session.account.accounts.compactMap { $0.coin?.server }
+    }
+
+    func info(for contract: String) -> Promise<TokenObject> {
+        return Promise { seal in
+            firstly {
+                tokensNetwork.search(query: contract).firstValue
+            }.done { token in
+                seal.fulfill(token)
+            }.catch { error in
+                seal.reject(error)
+            }
+        }
     }
 }

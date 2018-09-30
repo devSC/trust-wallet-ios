@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import BigInt
 import Foundation
@@ -6,21 +6,24 @@ import APIKit
 import JSONRPCKit
 import Result
 
-class SendTransactionCoordinator {
+final class SendTransactionCoordinator {
 
     private let keystore: Keystore
     let session: WalletSession
     let formatter = EtherNumberFormatter.full
     let confirmType: ConfirmType
+    let server: RPCServer
 
     init(
         session: WalletSession,
         keystore: Keystore,
-        confirmType: ConfirmType
+        confirmType: ConfirmType,
+        server: RPCServer
     ) {
         self.session = session
         self.keystore = keystore
         self.confirmType = confirmType
+        self.server = server
     }
 
     func send(
@@ -30,9 +33,9 @@ class SendTransactionCoordinator {
         if transaction.nonce >= 0 {
             signAndSend(transaction: transaction, completion: completion)
         } else {
-            let request = EtherServiceRequest(batch: BatchFactory().create(GetTransactionCountRequest(
-                address: session.account.address.description,
-                state: "pending"
+            let request = EtherServiceRequest(for: server, batch: BatchFactory().create(GetTransactionCountRequest(
+                address: transaction.account.address.description,
+                state: "latest"
             )))
             Session.send(request) { [weak self] result in
                 guard let `self` = self else { return }
@@ -47,7 +50,7 @@ class SendTransactionCoordinator {
         }
     }
 
-    private func appendNonce(to: SignTransaction, currentNonce: Int) -> SignTransaction {
+    private func appendNonce(to: SignTransaction, currentNonce: BigInt) -> SignTransaction {
         return SignTransaction(
             value: to.value,
             account: to.account,
@@ -56,11 +59,12 @@ class SendTransactionCoordinator {
             data: to.data,
             gasPrice: to.gasPrice,
             gasLimit: to.gasLimit,
-            chainID: to.chainID
+            chainID: to.chainID,
+            localizedObject: to.localizedObject
         )
     }
 
-    func signAndSend(
+    private func signAndSend(
         transaction: SignTransaction,
         completion: @escaping (Result<ConfirmResult, AnyError>) -> Void
     ) {
@@ -68,27 +72,33 @@ class SendTransactionCoordinator {
 
         switch signedTransaction {
         case .success(let data):
-            let transaction = SentTransaction(
-                id: data.sha3(.keccak256).hexEncoded,
-                original: transaction,
-                data: data
-            )
-            switch confirmType {
-            case .sign:
-                completion(.success(.signedTransaction(transaction)))
-            case .signThenSend:
-                let request = EtherServiceRequest(batch: BatchFactory().create(SendRawTransactionRequest(signedTransaction: data.hexEncoded)))
-                Session.send(request) { result in
-                    switch result {
-                    case .success:
-                        completion(.success(.sentTransaction(transaction)))
-                    case .failure(let error):
-                        completion(.failure(AnyError(error)))
-                    }
-                }
-            }
+            approve(confirmType: confirmType, transaction: transaction, data: data, completion: completion)
         case .failure(let error):
             completion(.failure(AnyError(error)))
+        }
+    }
+
+    private func approve(confirmType: ConfirmType, transaction: SignTransaction, data: Data, completion: @escaping (Result<ConfirmResult, AnyError>) -> Void) {
+        let id = data.sha3(.keccak256).hexEncoded
+        let sentTransaction = SentTransaction(
+            id: id,
+            original: transaction,
+            data: data
+        )
+        let dataHex = data.hexEncoded
+        switch confirmType {
+        case .sign:
+            completion(.success(.sentTransaction(sentTransaction)))
+        case .signThenSend:
+            let request = EtherServiceRequest(for: server, batch: BatchFactory().create(SendRawTransactionRequest(signedTransaction: dataHex)))
+            Session.send(request) { result in
+                switch result {
+                case .success:
+                    completion(.success(.sentTransaction(sentTransaction)))
+                case .failure(let error):
+                    completion(.failure(AnyError(error)))
+                }
+            }
         }
     }
 }

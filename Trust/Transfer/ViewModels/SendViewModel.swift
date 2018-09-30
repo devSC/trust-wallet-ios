@@ -1,10 +1,15 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
-import TrustKeystore
+import TrustCore
 import BigInt
 import JSONRPCKit
 import APIKit
+
+enum SendViewType {
+    case address
+    case amount
+}
 
 struct SendViewModel {
     /// stringFormatter of a `SendViewModel` to represent string values with respect of the curent locale.
@@ -17,9 +22,9 @@ struct SendViewModel {
     }()
     /// decimals of a `SendViewModel` to represent amount of digits after coma.
     lazy var decimals: Int = {
-        switch self.transferType {
-        case .ether:
-            return config.server.decimals
+        switch self.transfer.type {
+        case .ether, .dapp:
+            return transfer.server.decimals
         case .token(let token):
             return token.decimals
         }
@@ -35,7 +40,7 @@ struct SendViewModel {
         return chainState.gasPrice
     }
     /// transferType of a `SendViewModel` to know if it is token or ETH.
-    let transferType: TransferType
+    let transfer: Transfer
     /// config of a `SendViewModel` to know configuration of the current account.
     let config: Config
     let chainState: ChainState
@@ -43,13 +48,13 @@ struct SendViewModel {
     /// current wallet balance
     let balance: Balance?
     init(
-        transferType: TransferType,
+        transfer: Transfer,
         config: Config,
         chainState: ChainState,
         storage: TokensDataStore,
         balance: Balance?
     ) {
-        self.transferType = transferType
+        self.transfer = transfer
         self.config = config
         self.chainState = chainState
         self.storage = storage
@@ -59,14 +64,19 @@ struct SendViewModel {
         return "Send \(symbol)"
     }
     var symbol: String {
-        return transferType.symbol(server: config.server)
-    }
-    var destinationAddress: Address {
-        return transferType.contract()
+        return transfer.type.token.symbol
     }
     var backgroundColor: UIColor {
         return .white
     }
+
+    var views: [SendViewType] {
+        switch transfer.type {
+        case .ether, .dapp, .token:
+            return [.address, .amount]
+        }
+    }
+
     /// Convert `pairRate` to localized human readebale string with respect of the current locale.
     ///
     /// - Returns: `String` that represent `pairRate` in curent locale.
@@ -91,8 +101,8 @@ struct SendViewModel {
     /// - Returns: `String` that represent amount to send.
     mutating func sendMaxAmount() -> String {
         var max: Decimal? = 0
-        switch transferType {
-        case .ether: max = EtherNumberFormatter.full.decimal(from: balance?.value ?? 0, decimals: decimals)
+        switch transfer.type {
+        case .ether, .dapp: max = EtherNumberFormatter.full.decimal(from: balance?.value ?? 0, decimals: decimals)
         case .token(let token): max = EtherNumberFormatter.full.decimal(from: token.valueBigInt, decimals: decimals)
         }
         guard let maxAmount = max else {
@@ -138,14 +148,14 @@ struct SendViewModel {
     }
     /// Get pair price with ticker
     func currentPairPrice() -> Decimal? {
-        guard let currentTokenInfo = storage.tickers().first(where: { $0.contract == destinationAddress.description }), let price = Decimal(string: currentTokenInfo.price) else {
+        guard let currentTokenInfo = storage.coinTicker(by: transfer.type.address), let price = Decimal(string: currentTokenInfo.price) else {
             return nil
         }
         return price
     }
     /// If ther is ticker for this pair show fiat view.
     func isFiatViewHidden() -> Bool {
-        guard let currentTokenInfo = storage.tickers().first(where: { $0.contract == destinationAddress.description }), let price = Decimal(string: currentTokenInfo.price), price > 0 else {
+        guard let currentTokenInfo = storage.coinTicker(by: transfer.type.address), let price = Decimal(string: currentTokenInfo.price), price > 0 else {
             return true
         }
         return false

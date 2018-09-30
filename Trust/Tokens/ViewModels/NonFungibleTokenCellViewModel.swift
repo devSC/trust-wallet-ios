@@ -1,19 +1,28 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import UIKit
 
-struct NonFungibleTokenCellViewModel {
-    let token: NonFungibleTokenObject
-    init(token: NonFungibleTokenObject) {
-        self.token = token
+final class NonFungibleTokenCellViewModel {
+
+    private let tokens: [CollectibleTokenObject]
+
+    init(tokens: [CollectibleTokenObject]) {
+        self.tokens = tokens
     }
-    var name: String {
-        return token.name
+
+    lazy var collectionViewBacgroundColor: UIColor = {
+        return UIColor.white
+    }()
+
+    lazy var numberOfItemsInSection: Int = {
+        return tokens.count
+    }()
+
+    func collectionViewModel(for index: IndexPath) -> NonFungibleCollectionViewCellModel {
+        return NonFungibleCollectionViewCellModel(token: tokens[index.row])
     }
-    var annotation: String {
-        return token.annotation
-    }
-    var imagePath: URL? {
-        return URL(string: token.imagePath)
+
+    func token(for index: IndexPath) -> CollectibleTokenObject {
+        return tokens[index.row]
     }
 }

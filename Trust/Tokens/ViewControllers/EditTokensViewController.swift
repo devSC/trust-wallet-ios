@@ -1,9 +1,15 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
 
-class EditTokensViewController: UITableViewController {
+protocol EditTokensViewControllerDelegate: class {
+    func didDelete(token: TokenObject, in controller: EditTokensViewController)
+    func didEdit(token: TokenObject, in controller: EditTokensViewController)
+    func didDisable(token: TokenObject, in controller: EditTokensViewController)
+}
+
+final class EditTokensViewController: UITableViewController {
 
     let session: WalletSession
     let storage: TokensDataStore
@@ -12,16 +18,16 @@ class EditTokensViewController: UITableViewController {
     lazy var viewModel: EditTokenViewModel = {
         return EditTokenViewModel(
             network: network,
-            storage: storage,
-            config: session.config,
-            table: tableView
+            storage: storage
         )
     }()
+    weak var delegate: EditTokensViewControllerDelegate?
 
     lazy var searchController: UISearchController = {
-        let searchController = UISearchController(searchResultsController: nil)
+        let searchController = UISearchController(searchResultsController: self.searchResultsController)
         searchController.delegate = self
         searchController.searchResultsUpdater = self
+        searchController.hidesNavigationBarDuringPresentation = true
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchBar.placeholder = viewModel.searchPlaceholder
         searchController.searchBar.sizeToFit()
@@ -31,11 +37,19 @@ class EditTokensViewController: UITableViewController {
         return searchController
     }()
 
+    lazy var searchResultsController: SearchTokenResultsController = {
+        let resultsController = SearchTokenResultsController()
+        resultsController.delegate = self
+        return resultsController
+    }()
+
     lazy var searchClosure: (String) -> Void = {
-        return debounce(delay: .milliseconds(250), action: { (query) in
-            self.viewModel.search(token: query)
+        return debounce(delay: .milliseconds(250), action: { [weak self] (query) in
+            self?.search(token: query)
         })
     }()
+
+    let feedbackGenerator = UINotificationFeedbackGenerator()
 
     init(
         session: WalletSession,
@@ -56,10 +70,18 @@ class EditTokensViewController: UITableViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return .lightContent
+    }
+
+    func fetch() {
+        tableView.reloadData()
+    }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
 
-        tableView.reloadData()
+        fetch()
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -72,16 +94,9 @@ class EditTokensViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: R.nib.editTokenTableViewCell.name, for: indexPath) as! EditTokenTableViewCell
-        cell.delegate = self
         let token = self.viewModel.token(for: indexPath)
-        cell.viewModel = EditTokenTableCellViewModel(
-            token: token.token,
-            coinTicker: storage.coinTicker(for: token.token),
-            config: session.config,
-            isLocal: token.local
-        )
-        cell.separatorInset = TokensLayout.tableView.layoutInsets
-        cell.selectionStyle = token.local ? .none : .default
+        configCell(cell, token: token)
+        cell.delegate = self
         return cell
     }
 
@@ -89,25 +104,48 @@ class EditTokensViewController: UITableViewController {
         return TokensLayout.tableView.height
     }
 
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        if viewModel.didSelectRowAt(indexPath) {
-            searchController.isActive = false
-            searchBarCancelButtonClicked(searchController.searchBar)
-        }
-    }
-
     func configureTableView() {
         tableView.register(R.nib.editTokenTableViewCell(), forCellReuseIdentifier: R.nib.editTokenTableViewCell.name)
         tableView.tableHeaderView = searchController.searchBar
         tableView.separatorStyle = .singleLine
-        tableView.separatorColor = TokensLayout.tableView.separatorColor
-        tableView.separatorInset = TokensLayout.tableView.layoutInsets
+        tableView.separatorColor = StyleLayout.TableView.separatorColor
         tableView.backgroundColor = .white
         tableView.cellLayoutMarginsFollowReadableWidth = false
         tableView.rowHeight = UITableViewAutomaticDimension
         tableView.tableFooterView = UIView()
         tableView.keyboardDismissMode = .onDrag
+    }
+
+    private func configCell(_ cell: EditTokenTableViewCell, token: (token: TokenObject, local: Bool)) {
+        cell.viewModel = EditTokenTableCellViewModel(
+            viewModel: TokenObjectViewModel(token: token.token),
+            coinTicker: storage.coinTicker(by: token.token.address),
+            isLocal: token.local
+        )
+        cell.selectionStyle = token.local ? .none : .default
+    }
+
+    private func search(token: String) {
+        let localResults = viewModel.searchLocal(token: token)
+        searchResultsController.localResults = localResults
+        viewModel.searchNetwork(token: token) { [weak self] (tokens) in
+            self?.searchResultsController.remoteResults = tokens
+        }
+    }
+
+    override func tableView(_ tableView: UITableView, editActionsForRowAt indexPath: IndexPath) -> [UITableViewRowAction]? {
+        let token = viewModel.token(for: indexPath)
+        let delete = UITableViewRowAction(style: .destructive, title: R.string.localizable.delete()) { [unowned self] (_, _) in
+            self.delegate?.didDelete(token: token.token, in: self)
+        }
+        let edit = UITableViewRowAction(style: .normal, title: R.string.localizable.edit()) { [unowned self] (_, _) in
+            self.delegate?.didEdit(token: token.token, in: self)
+        }
+        if viewModel.canEdit(for: indexPath) {
+            return [delete, edit]
+        } else {
+            return []
+        }
     }
 }
 
@@ -117,6 +155,27 @@ extension EditTokensViewController: EditTokenTableViewCellDelegate {
             return
         }
         self.viewModel.updateToken(indexPath: indexPath, action: .disable(!state))
+    }
+}
+
+extension EditTokensViewController: SearchTokenResultsControllerDelegate {
+    func searchResultsController(configureCell cell: EditTokenTableViewCell, with token: (token: TokenObject, local: Bool)) {
+        self.configCell(cell, token: token)
+    }
+
+    func searchResultsController(didSelect cell: EditTokenTableViewCell, with token: (token: TokenObject, local: Bool)) {
+        if !token.local {
+            storage.add(tokens: [token.token])
+            feedbackGenerator.notificationOccurred(.success)
+            searchController.isActive = false
+            searchBarCancelButtonClicked(searchController.searchBar)
+            tableView.reloadData()
+        }
+    }
+
+    func searchResultsController(didUpdate token: TokenObject, with action: TokenAction) {
+        self.storage.update(tokens: [token], action: action)
+        tableView.reloadData()
     }
 }
 
@@ -131,7 +190,7 @@ extension EditTokensViewController: UISearchBarDelegate {
     }
 
     func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
-        self.viewModel.search(token: "")
+        self.search(token: "")
     }
 }
 

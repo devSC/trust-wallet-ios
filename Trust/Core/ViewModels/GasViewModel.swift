@@ -1,33 +1,50 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import BigInt
 
 struct GasViewModel {
     let fee: BigInt
-    let symbol: String
-    let currencyRate: CurrencyRate?
+    let server: RPCServer
+    let store: TokensDataStore
     let formatter: EtherNumberFormatter
 
     init(
         fee: BigInt,
-        symbol: String,
-        currencyRate: CurrencyRate? = nil,
+        server: RPCServer,
+        store: TokensDataStore,
         formatter: EtherNumberFormatter = .full
     ) {
         self.fee = fee
-        self.symbol = symbol
-        self.currencyRate = currencyRate
+        self.server = server
+        self.store = store
         self.formatter = formatter
     }
 
-    var feeText: String {
-        let gasFee = formatter.string(from: self.fee)
-        var text = "\(gasFee.description) \(self.symbol)"
+    var etherFee: String {
+        let gasFee = formatter.string(from: fee)
+        return "\(gasFee.description) \(server.symbol)"
+    }
 
-        if let feeInCurrency = currencyRate?.estimate(fee: gasFee, with: self.symbol),
-            let result = currencyRate?.format(fee: feeInCurrency) {
-            text += " (\(result))"
+    var feeCurrency: Double? {
+        guard let price = store.coinTicker(by: server.priceID)?.price else {
+            return .none
+        }
+        return FeeCalculator.estimate(fee: formatter.string(from: fee), with: price)
+    }
+
+    var monetaryFee: String? {
+        guard let feeInCurrency = feeCurrency,
+            let fee = FeeCalculator.format(fee: feeInCurrency) else {
+            return .none
+        }
+        return fee
+    }
+
+    var feeText: String {
+        var text = etherFee
+        if let monetaryFee = monetaryFee {
+            text += "(\(monetaryFee))"
         }
         return text
     }

@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
@@ -7,18 +7,21 @@ import JSONRPCKit
 import APIKit
 import BigInt
 import QRCodeReaderViewController
+import TrustCore
 import TrustKeystore
 
 protocol SendViewControllerDelegate: class {
     func didPressConfirm(
         transaction: UnconfirmedTransaction,
-        transferType: TransferType,
+        transfer: Transfer,
         in viewController: SendViewController
     )
 }
+
 class SendViewController: FormViewController {
     private lazy var viewModel: SendViewModel = {
-        return .init(transferType: transferType, config: session.config, chainState: session.chainState, storage: storage, balance: session.balance)
+        let balance = Balance(value: transfer.type.token.valueBigInt)
+        return .init(transfer: transfer, config: session.config, chainState: chainState, storage: storage, balance: balance)
     }()
     weak var delegate: SendViewControllerDelegate?
     struct Values {
@@ -27,8 +30,9 @@ class SendViewController: FormViewController {
     }
     let session: WalletSession
     let account: Account
-    let transferType: TransferType
+    let transfer: Transfer
     let storage: TokensDataStore
+    let chainState: ChainState
     var addressRow: TextFloatLabelRow? {
         return form.rowBy(tag: Values.address) as? TextFloatLabelRow
     }
@@ -51,19 +55,70 @@ class SendViewController: FormViewController {
         session: WalletSession,
         storage: TokensDataStore,
         account: Account,
-        transferType: TransferType = .ether(destination: .none)
+        transfer: Transfer,
+        chainState: ChainState
     ) {
         self.session = session
         self.account = account
-        self.transferType = transferType
+        self.transfer = transfer
         self.storage = storage
+        self.chainState = chainState
         super.init(nibName: nil, bundle: nil)
         title = viewModel.title
         view.backgroundColor = viewModel.backgroundColor
-        let recipientRightView = FieldAppereance.addressFieldRightView(
-            pasteAction: { [unowned self] in self.pasteAction() },
-            qrAction: { [unowned self] in self.openReader() }
+
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: R.string.localizable.next(),
+            style: .done,
+            target: self,
+            action: #selector(send)
         )
+
+        let section = Section(header: "", footer: viewModel.isFiatViewHidden() ? "" : viewModel.pairRateRepresantetion())
+        fields().forEach { cell in
+            section.append(cell)
+        }
+        form = Section()
+            +++ section
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        self.navigationController?.applyTintAdjustment()
+    }
+
+    private func fields() -> [BaseRow] {
+        return viewModel.views.map { field(for: $0) }
+    }
+
+    private func field(for type: SendViewType) -> BaseRow {
+        switch type {
+        case .address:
+            return addressField()
+        case .amount:
+            return amountField()
+        }
+    }
+
+    func addressField() -> TextFloatLabelRow {
+        let recipientRightView = AddressFieldView()
+        recipientRightView.translatesAutoresizingMaskIntoConstraints = false
+        recipientRightView.pasteButton.addTarget(self, action: #selector(pasteAction), for: .touchUpInside)
+        recipientRightView.qrButton.addTarget(self, action: #selector(openReader), for: .touchUpInside)
+
+        return AppFormAppearance.textFieldFloat(tag: Values.address) {
+            $0.add(rule: EthereumAddressRule())
+            $0.validationOptions = .validatesOnDemand
+        }.cellUpdate { cell, _ in
+            cell.textField.textAlignment = .left
+            cell.textField.placeholder = NSLocalizedString("send.recipientAddress.textField.placeholder", value: "Recipient Address", comment: "")
+            cell.textField.rightView = recipientRightView
+            cell.textField.rightViewMode = .always
+            cell.textField.accessibilityIdentifier = "amount-field"
+        }
+    }
+
+    func amountField() -> TextFloatLabelRow {
         let fiatButton = Button(size: .normal, style: .borderless)
         fiatButton.translatesAutoresizingMaskIntoConstraints = false
         fiatButton.setTitle(viewModel.currentPair.right, for: .normal)
@@ -77,35 +132,20 @@ class SendViewController: FormViewController {
         amountRightView.distribution = .equalSpacing
         amountRightView.spacing = 1
         amountRightView.axis = .horizontal
-        form = Section()
-            +++ Section(header: "", footer: viewModel.isFiatViewHidden() ? "" : viewModel.pairRateRepresantetion())
-            <<< AppFormAppearance.textFieldFloat(tag: Values.address) {
-                $0.add(rule: EthereumAddressRule())
-                $0.validationOptions = .validatesOnDemand
-            }.cellUpdate { cell, _ in
-                cell.textField.textAlignment = .left
-                cell.textField.placeholder = NSLocalizedString("send.recipientAddress.textField.placeholder", value: "Recipient Address", comment: "")
-                cell.textField.rightView = recipientRightView
-                cell.textField.rightViewMode = .always
-                cell.textField.accessibilityIdentifier = "amount-field"
-            }
-            <<< AppFormAppearance.textFieldFloat(tag: Values.amount) {
-                $0.add(rule: RuleRequired())
-                $0.validationOptions = .validatesOnDemand
-            }.cellUpdate {[weak self] cell, _ in
-                cell.textField.isCopyPasteDisabled = true
-                cell.textField.textAlignment = .left
-                cell.textField.delegate = self
-                cell.textField.placeholder = "\(self?.viewModel.currentPair.left ?? "") " + NSLocalizedString("send.amount.textField.placeholder", value: "Amount", comment: "")
-                cell.textField.keyboardType = .decimalPad
-                cell.textField.rightView = amountRightView
-                cell.textField.rightViewMode = .always
-            }
+        return AppFormAppearance.textFieldFloat(tag: Values.amount) {
+            $0.add(rule: RuleRequired())
+            $0.validationOptions = .validatesOnDemand
+        }.cellUpdate {[weak self] cell, _ in
+            cell.textField.isCopyPasteDisabled = true
+            cell.textField.textAlignment = .left
+            cell.textField.delegate = self
+            cell.textField.placeholder = "\(self?.viewModel.currentPair.left ?? "") " + NSLocalizedString("send.amount.textField.placeholder", value: "Amount", comment: "")
+            cell.textField.keyboardType = .decimalPad
+            cell.textField.rightView = amountRightView
+            cell.textField.rightViewMode = .always
+        }
     }
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        self.navigationController?.applyTintAdjustment()
-    }
+
     func clear() {
         let fields = [addressRow, amountRow]
         for field in fields {
@@ -113,17 +153,18 @@ class SendViewController: FormViewController {
             field?.reload()
         }
     }
+
     @objc func send() {
         let errors = form.validate()
         guard errors.isEmpty else { return }
         let addressString = addressRow?.value?.trimmed ?? ""
         let amountString = viewModel.amount
-        guard let address = Address(string: addressString) else {
+        guard let address = EthereumAddress(string: addressString) else {
             return displayError(error: Errors.invalidAddress)
         }
         let parsedValue: BigInt? = {
-            switch transferType {
-            case .ether:
+            switch transfer.type {
+            case .ether, .dapp:
                 return EtherNumberFormatter.full.number(from: amountString, units: .ether)
             case .token(let token):
                 return EtherNumberFormatter.full.number(from: amountString, decimals: token.decimals)
@@ -133,7 +174,7 @@ class SendViewController: FormViewController {
             return displayError(error: SendInputErrors.wrongInput)
         }
         let transaction = UnconfirmedTransaction(
-            transferType: transferType,
+            transfer: transfer,
             value: value,
             to: address,
             data: data,
@@ -141,7 +182,7 @@ class SendViewController: FormViewController {
             gasPrice: viewModel.gasPrice,
             nonce: .none
         )
-        self.delegate?.didPressConfirm(transaction: transaction, transferType: transferType, in: self)
+        self.delegate?.didPressConfirm(transaction: transaction, transfer: transfer, in: self)
     }
     @objc func openReader() {
         let controller = QRCodeReaderViewController()
@@ -227,12 +268,14 @@ extension SendViewController: QRCodeReaderDelegate {
         }
 
         if let value = result.params["amount"] {
-            amountRow?.value = EtherNumberFormatter.full.string(from: BigInt(value) ?? BigInt(), units: .ether)
+            amountRow?.value = value
+            let amount = viewModel.decimalAmount(with: value)
+            viewModel.updatePairPrice(with: amount)
         } else {
             amountRow?.value = ""
+            viewModel.pairRate = 0.0
         }
         amountRow?.reload()
-        viewModel.pairRate = 0.0
         updatePriceSection()
     }
 }

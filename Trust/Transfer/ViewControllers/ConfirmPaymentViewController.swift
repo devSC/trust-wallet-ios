@@ -1,10 +1,10 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import BigInt
 import Foundation
 import UIKit
-import StackViewController
 import Result
+import StatefulViewController
 
 enum ConfirmType {
     case sign
@@ -19,11 +19,9 @@ enum ConfirmResult {
 class ConfirmPaymentViewController: UIViewController {
 
     private let keystore: Keystore
-    //let transaction: UnconfirmedTransaction
     let session: WalletSession
-    let stackViewController = StackViewController()
     lazy var sendTransactionCoordinator = {
-        return SendTransactionCoordinator(session: self.session, keystore: keystore, confirmType: confirmType)
+        return SendTransactionCoordinator(session: self.session, keystore: keystore, confirmType: confirmType, server: server)
     }()
     lazy var submitButton: UIButton = {
         let button = Button(size: .large, style: .solid)
@@ -33,37 +31,69 @@ class ConfirmPaymentViewController: UIViewController {
         return button
     }()
     lazy var viewModel: ConfirmPaymentViewModel = {
+        //TODO: Refactor
         return ConfirmPaymentViewModel(type: self.confirmType)
     }()
     var configurator: TransactionConfigurator
     let confirmType: ConfirmType
+    let server: RPCServer
     var didCompleted: ((Result<ConfirmResult, AnyError>) -> Void)?
+
+    lazy var stackView: UIStackView = {
+        let stackView = UIStackView()
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.spacing = 0
+        stackView.axis = .vertical
+        return stackView
+    }()
+
+    lazy var footerStack: UIStackView = {
+        let footerStack = UIStackView(arrangedSubviews: [
+            submitButton,
+        ])
+        footerStack.translatesAutoresizingMaskIntoConstraints = false
+        return footerStack
+    }()
 
     init(
         session: WalletSession,
         keystore: Keystore,
         configurator: TransactionConfigurator,
-        confirmType: ConfirmType
+        confirmType: ConfirmType,
+        server: RPCServer
     ) {
         self.session = session
         self.keystore = keystore
         self.configurator = configurator
         self.confirmType = confirmType
+        self.server = server
 
         super.init(nibName: nil, bundle: nil)
 
-        navigationItem.rightBarButtonItem = UIBarButtonItem(image: R.image.settings_icon(), style: .plain, target: self, action: #selector(edit))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(image: R.image.transactionSlider(), style: .done, target: self, action: #selector(edit))
         view.backgroundColor = viewModel.backgroundColor
-        stackViewController.view.backgroundColor = viewModel.backgroundColor
         navigationItem.title = viewModel.title
 
+        errorView = ErrorView(onRetry: { [weak self] in
+            self?.fetch()
+        })
+        loadingView = LoadingView()
+
+        view.addSubview(stackView)
+        view.addSubview(footerStack)
+        fetch()
+    }
+
+    func fetch() {
+        startLoading()
         configurator.load { [weak self] result in
             guard let `self` = self else { return }
             switch result {
             case .success:
                 self.reloadView()
+                self.endLoading()
             case .failure(let error):
-                self.displayError(error: error)
+                self.endLoading(animated: true, error: error, completion: nil)
             }
         }
         configurator.configurationUpdate.subscribe { [weak self] _ in
@@ -72,81 +102,82 @@ class ConfirmPaymentViewController: UIViewController {
         }
     }
 
-    func configure(for detailsViewModel: ConfirmPaymentDetailsViewModel) {
-        stackViewController.items.forEach { stackViewController.removeItem($0) }
+    private func configure(for detailsViewModel: ConfirmPaymentDetailsViewModel) {
+        stackView.removeAllArrangedSubviews()
+
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: view.layoutGuide.topAnchor),
+            stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            footerStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -StyleLayout.sideMargin),
+            footerStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: StyleLayout.sideMargin),
+            footerStack.bottomAnchor.constraint(equalTo: view.layoutGuide.bottomAnchor, constant: -StyleLayout.sideMargin),
+
+            submitButton.leadingAnchor.constraint(equalTo: footerStack.leadingAnchor),
+            submitButton.trailingAnchor.constraint(equalTo: footerStack.leadingAnchor),
+        ])
 
         let header = TransactionHeaderView()
         header.translatesAutoresizingMaskIntoConstraints = false
-        header.amountLabel.attributedText = detailsViewModel.amountAttributedString
+        header.configure(for: detailsViewModel.transactionHeaderViewModel)
 
-        var items: [UIView] = [
-            .spacer(),
+        let items: [UIView] = [
+            .spacer(height: TransactionAppearance.spacing),
             header,
+            .spacer(height: 10),
             TransactionAppearance.divider(color: Colors.lightGray, alpha: 0.3),
+            .spacer(height: TransactionAppearance.spacing),
             TransactionAppearance.item(
                 title: detailsViewModel.paymentFromTitle,
-                subTitle: session.account.address.description
+                subTitle: detailsViewModel.currentWalletDescriptionString
             ),
+            .spacer(height: TransactionAppearance.spacing),
+            TransactionAppearance.divider(color: Colors.lightGray, alpha: 0.3),
+            .spacer(height: TransactionAppearance.spacing),
             TransactionAppearance.item(
-                title: detailsViewModel.paymentToTitle,
-                subTitle: detailsViewModel.paymentToText
+                title: detailsViewModel.requesterTitle,
+                subTitle: detailsViewModel.requesterText
             ),
-            TransactionAppearance.item(
-                title: detailsViewModel.gasLimitTitle,
-                subTitle: detailsViewModel.gasLimitText
-            ) { [unowned self] _, _, _ in
-                self.edit()
-            },
-            TransactionAppearance.item(
-                title: detailsViewModel.gasPriceTitle,
-                subTitle: detailsViewModel.gasPriceText
-            ) { [unowned self] _, _, _ in
-                self.edit()
-            },
-            TransactionAppearance.item(
-                title: detailsViewModel.feeTitle,
-                subTitle: detailsViewModel.feeText
-            ) { [unowned self] _, _, _ in
-                self.edit()
-            },
+            .spacer(height: TransactionAppearance.spacing),
+            TransactionAppearance.divider(color: Colors.lightGray, alpha: 0.3),
+            .spacer(height: TransactionAppearance.spacing),
+            networkFeeView(detailsViewModel),
+            .spacer(height: TransactionAppearance.spacing),
+            TransactionAppearance.divider(color: Colors.lightGray, alpha: 0.3),
+            TransactionAppearance.oneLine(
+                title: detailsViewModel.totalTitle,
+                subTitle: detailsViewModel.totalText,
+                titleStyle: .headingSemiBold,
+                subTitleStyle: .paragraph,
+                layoutMargins: UIEdgeInsets(top: 15, left: 15, bottom: 15, right: 15),
+                backgroundColor: UIColor(hex: "faf9f9")
+            ),
+            TransactionAppearance.divider(color: Colors.lightGray, alpha: 0.3),
         ]
 
-        // show total ether
-        if case TransferType.ether(_) = configurator.transaction.transferType {
-            items.append(TransactionAppearance.item(
-                title: detailsViewModel.totalTitle,
-                subTitle: detailsViewModel.totalText
-            ))
+        for item in items {
+            stackView.addArrangedSubview(item)
         }
 
-        items.append(TransactionAppearance.item(
-            title: detailsViewModel.dataTitle,
-            subTitle: detailsViewModel.dataText
+        updateSubmitButton()
+    }
+
+    private func networkFeeView(_ viewModel: ConfirmPaymentDetailsViewModel) -> UIView {
+        return TransactionAppearance.oneLine(
+            title: viewModel.estimatedFeeTitle,
+            subTitle: viewModel.estimatedFeeText
         ) { [unowned self] _, _, _ in
             self.edit()
-        })
-
-        for item in items {
-            stackViewController.addItem(item)
         }
-
-        stackViewController.scrollView.alwaysBounceVertical = true
-        stackViewController.stackView.spacing = 10
-        stackViewController.view.addSubview(submitButton)
-
-        NSLayoutConstraint.activate([
-            submitButton.bottomAnchor.constraint(equalTo: stackViewController.view.layoutGuide.bottomAnchor, constant: -15),
-            submitButton.trailingAnchor.constraint(equalTo: stackViewController.view.trailingAnchor, constant: -15),
-            submitButton.leadingAnchor.constraint(equalTo: stackViewController.view.leadingAnchor, constant: 15),
-        ])
-
-        displayChildViewController(viewController: stackViewController)
-        updateSubmitButton()
     }
 
     private func updateSubmitButton() {
         let status = configurator.balanceValidStatus()
-        let buttonTitle = viewModel.getActionButtonText(status, config: configurator.session.config, transferType: configurator.transaction.transferType)
+        let buttonTitle = viewModel.getActionButtonText(
+            status, config: configurator.session.config,
+            transfer: configurator.transaction.transfer
+        )
         submitButton.isEnabled = status.sufficient
         submitButton.setTitle(buttonTitle, for: .normal)
     }
@@ -154,8 +185,8 @@ class ConfirmPaymentViewController: UIViewController {
     private func reloadView() {
         let viewModel = ConfirmPaymentDetailsViewModel(
             transaction: configurator.previewTransaction(),
-            currentBalance: session.balance,
-            currencyRate: session.balanceCoordinator.currencyRate
+            session: session,
+            server: server
         )
         self.configure(for: viewModel)
     }
@@ -167,9 +198,9 @@ class ConfirmPaymentViewController: UIViewController {
     @objc func edit() {
         let controller = ConfigureTransactionViewController(
             configuration: configurator.configuration,
-            transferType: configurator.transaction.transferType,
+            transfer: configurator.transaction.transfer,
             config: session.config,
-            currencyRate: session.balanceCoordinator.currencyRate
+            session: session
         )
         controller.delegate = self
         self.navigationController?.pushViewController(controller, animated: true)
@@ -178,12 +209,18 @@ class ConfirmPaymentViewController: UIViewController {
     @objc func send() {
         self.displayLoading()
 
-        let transaction = configurator.signTransaction()
+        let transaction = configurator.signTransaction
         self.sendTransactionCoordinator.send(transaction: transaction) { [weak self] result in
             guard let `self` = self else { return }
             self.didCompleted?(result)
             self.hideLoading()
         }
+    }
+}
+
+extension ConfirmPaymentViewController: StatefulViewController {
+    func hasContent() -> Bool {
+        return false
     }
 }
 

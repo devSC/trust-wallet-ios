@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
@@ -11,10 +11,10 @@ enum ButtonSize: Int {
 
     var height: CGFloat {
         switch self {
-        case .small: return 32
-        case .normal: return 44
-        case .large: return 50
-        case .extraLarge: return 64
+        case .small: return Size.scale(size: 32)
+        case .normal: return Size.scale(size: 44)
+        case .large: return  Size.scale(size: 50)
+        case .extraLarge: return Size.scale(size: 64)
         }
     }
 }
@@ -24,11 +24,13 @@ enum ButtonStyle: Int {
     case squared
     case border
     case borderless
+    case clear
 
     var backgroundColor: UIColor {
         switch self {
         case .solid, .squared: return Colors.blue
         case .border, .borderless: return .white
+        case .clear : return .clear
         }
     }
 
@@ -37,6 +39,7 @@ enum ButtonStyle: Int {
         case .solid, .squared: return Colors.blue
         case .border: return Colors.blue
         case .borderless: return .white
+        case .clear: return .clear
         }
     }
 
@@ -47,7 +50,7 @@ enum ButtonStyle: Int {
     var cornerRadius: CGFloat {
         switch self {
         case .solid, .border: return 5
-        case .squared, .borderless: return 0
+        case .squared, .borderless, .clear: return 0
         }
     }
 
@@ -56,7 +59,8 @@ enum ButtonStyle: Int {
         case .solid,
              .squared,
              .border,
-             .borderless:
+             .borderless,
+             .clear:
             return UIFont.systemFont(ofSize: 16, weight: UIFont.Weight.medium)
         }
     }
@@ -64,7 +68,7 @@ enum ButtonStyle: Int {
     var textColor: UIColor {
         switch self {
         case .solid, .squared: return .white
-        case .border, .borderless: return Colors.blue
+        case .border, .borderless, .clear: return Colors.blue
         }
     }
 
@@ -72,20 +76,20 @@ enum ButtonStyle: Int {
         switch self {
         case .solid, .squared: return UIColor(white: 1, alpha: 0.8)
         case .border: return .white
-        case .borderless: return Colors.blue
+        case .borderless, .clear: return Colors.blue
         }
     }
 
     var borderColor: UIColor {
         switch self {
         case .solid, .squared, .border: return Colors.blue
-        case .borderless: return .clear
+        case .borderless, .clear: return .clear
         }
     }
 
     var borderWidth: CGFloat {
         switch self {
-        case .solid, .squared, .borderless: return 0
+        case .solid, .squared, .borderless, .clear: return 0
         case .border: return 1
         }
     }
@@ -105,7 +109,7 @@ class Button: UIButton {
     func apply(size: ButtonSize, style: ButtonStyle) {
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: size.height),
-            ])
+        ])
 
         backgroundColor = style.backgroundColor
         layer.cornerRadius = style.cornerRadius

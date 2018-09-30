@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
@@ -21,7 +21,7 @@ extension UIAlertController {
             let password = textField.text ?? ""
             completion(.success(password))
         }))
-        alertController.addAction(UIAlertAction(title: NSLocalizedString("Cancel", value: "Cancel", comment: ""), style: .cancel, handler: { _ in
+        alertController.addAction(UIAlertAction(title: R.string.localizable.cancel(), style: .cancel, handler: { _ in
             completion(.failure(ConfirmationError.cancel))
         }))
         alertController.addTextField(configurationHandler: {(textField: UITextField!) -> Void in
@@ -35,7 +35,7 @@ extension UIAlertController {
         title: String? = .none,
         message: String? = .none,
         style: UIAlertControllerStyle,
-        in navigationController: UINavigationController
+        in navigationController: NavigationController
     ) -> UIAlertController {
         let alertController = UIAlertController(title: title, message: message, preferredStyle: style)
         alertController.popoverPresentationController?.sourceView = navigationController.view

@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import UIKit
 import Eureka
@@ -12,8 +12,8 @@ class ConfigureTransactionViewController: FormViewController {
 
     let configuration: TransactionConfiguration
     let config: Config
-    let transferType: TransferType
-    let currencyRate: CurrencyRate?
+    let transfer: Transfer
+    let session: WalletSession
     private let fullFormatter = EtherNumberFormatter.full
 
     struct Values {
@@ -21,12 +21,13 @@ class ConfigureTransactionViewController: FormViewController {
         static let gasLimit = "gasLimit"
         static let totalFee = "totalFee"
         static let data = "data"
+        static let nonce = "nonce"
     }
 
     lazy var viewModel: ConfigureTransactionViewModel = {
         return ConfigureTransactionViewModel(
             config: self.config,
-            transferType: self.transferType
+            transfer: self.transfer
         )
     }()
 
@@ -42,6 +43,9 @@ class ConfigureTransactionViewController: FormViewController {
     private var dataRow: TextFloatLabelRow? {
         return form.rowBy(tag: Values.data) as? TextFloatLabelRow
     }
+    private var nonceRow: TextFloatLabelRow? {
+        return form.rowBy(tag: Values.nonce) as? TextFloatLabelRow
+    }
 
     private var gasLimit: BigInt {
         return BigInt(String(Int(gasLimitRow?.value ?? 0)), radix: 10) ?? BigInt()
@@ -55,23 +59,26 @@ class ConfigureTransactionViewController: FormViewController {
     private var dataString: String {
         return dataRow?.value ?? "0x"
     }
+    private var nonce: BigInt {
+        return BigInt(nonceRow?.value ?? "0") ?? 0
+    }
 
     private var gasViewModel: GasViewModel {
-        return GasViewModel(fee: totalFee, symbol: config.server.symbol, currencyRate: currencyRate, formatter: fullFormatter)
+        return GasViewModel(fee: totalFee, server: transfer.server, store: session.tokensStorage, formatter: fullFormatter)
     }
 
     weak var delegate: ConfigureTransactionViewControllerDelegate?
 
     init(
         configuration: TransactionConfiguration,
-        transferType: TransferType,
+        transfer: Transfer,
         config: Config,
-        currencyRate: CurrencyRate?
+        session: WalletSession
     ) {
         self.configuration = configuration
-        self.transferType = transferType
+        self.transfer = transfer
         self.config = config
-        self.currencyRate = currencyRate
+        self.session = session
 
         super.init(nibName: nil, bundle: nil)
 
@@ -88,9 +95,7 @@ class ConfigureTransactionViewController: FormViewController {
 
         let gasPriceGwei = EtherNumberFormatter.full.string(from: configuration.gasPrice, units: UnitConfiguration.gasPriceUnit)
 
-        form = Section()
-
-        +++ Section(
+        form = Section(
             footer: viewModel.gasPriceFooterText
         )
 
@@ -126,20 +131,32 @@ class ConfigureTransactionViewController: FormViewController {
             }
         }
 
-        +++ Section {
-            $0.hidden = Eureka.Condition.function([], { _ in
-                return self.viewModel.isDataInputHidden
-            })
-        }
+        +++ Section()
+
         <<< AppFormAppearance.textFieldFloat(tag: Values.data) {
-            $0.title = NSLocalizedString("configureTransaction.data.label.title", value: "Transaction Data (Optional)", comment: "")
+            let dataText = String(format:
+                NSLocalizedString(
+                    "configureTransaction.dataField.label.title",
+                    value: "Data (Optional). %@",
+                    comment: ""
+            ), self.configuration.data.description)
+            $0.title = dataText
             $0.value = self.configuration.data.hexEncoded
         }
 
         +++ Section()
 
+        <<< AppFormAppearance.textFieldFloat(tag: Values.nonce) {
+            $0.title = R.string.localizable.nonce()
+            $0.value = "\(self.configuration.nonce)"
+        }.cellUpdate { cell, _ in
+            cell.textField.keyboardType = .numberPad
+        }
+
+        +++ Section()
+
         <<< TextRow(Values.totalFee) {
-            $0.title = NSLocalizedString("configureTransaction.totalNetworkFee.label.title", value: "Total network fee", comment: "")
+            $0.title = R.string.localizable.networkFee()
             $0.disabled = true
         }
 
@@ -158,7 +175,7 @@ class ConfigureTransactionViewController: FormViewController {
         }
 
         guard totalFee <= ConfigureTransaction.gasFeeMax else {
-            return displayError(error: ConfigureTransactionError.gasFeeTooHigh)
+            return displayError(error: ConfigureTransactionError.gasFeeTooHigh(transfer.server))
         }
 
         let data: Data = {
@@ -171,7 +188,8 @@ class ConfigureTransactionViewController: FormViewController {
         let configuration = TransactionConfiguration(
             gasPrice: gasPrice,
             gasLimit: gasLimit,
-            data: data
+            data: data,
+            nonce: nonce
         )
         delegate?.didEdit(configuration: configuration, in: self)
     }

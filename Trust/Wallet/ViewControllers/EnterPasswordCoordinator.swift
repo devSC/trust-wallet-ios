@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import TrustKeystore
@@ -8,7 +8,7 @@ protocol EnterPasswordCoordinatorDelegate: class {
     func didCancel(in coordinator: EnterPasswordCoordinator)
 }
 
-class EnterPasswordCoordinator: Coordinator {
+final class EnterPasswordCoordinator: Coordinator {
     var coordinators: [Coordinator] = []
 
     weak var delegate: EnterPasswordCoordinatorDelegate?
@@ -19,11 +19,11 @@ class EnterPasswordCoordinator: Coordinator {
         controller.delegate = self
         return controller
     }()
-    let navigationController: UINavigationController
+    let navigationController: NavigationController
     private let account: Account
 
     init(
-        navigationController: UINavigationController = UINavigationController(),
+        navigationController: NavigationController = NavigationController(),
         account: Account
     ) {
         self.navigationController = navigationController

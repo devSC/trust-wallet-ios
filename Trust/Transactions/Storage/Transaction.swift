@@ -1,11 +1,12 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import RealmSwift
-import TrustKeystore
+import TrustCore
 
-class Transaction: Object, Decodable {
+final class Transaction: Object, Decodable {
     @objc dynamic var id: String = ""
+    @objc dynamic var uniqueID: String = ""
     @objc dynamic var blockNumber: Int = 0
     @objc dynamic var from = ""
     @objc dynamic var to = ""
@@ -13,9 +14,16 @@ class Transaction: Object, Decodable {
     @objc dynamic var gas = ""
     @objc dynamic var gasPrice = ""
     @objc dynamic var gasUsed = ""
-    @objc dynamic var nonce: String = ""
+    @objc dynamic var nonce: Int = 0
     @objc dynamic var date = Date()
     @objc dynamic var internalState: Int = TransactionState.completed.rawValue
+
+    @objc private dynamic var rawCoin = -1
+    public var coin: Coin {
+        get { return Coin(rawValue: rawCoin)! }
+        set { rawCoin = newValue.rawValue }
+    }
+
     var localizedOperations = List<LocalizedOperationObject>()
 
     convenience init(
@@ -27,14 +35,15 @@ class Transaction: Object, Decodable {
         gas: String,
         gasPrice: String,
         gasUsed: String,
-        nonce: String,
+        nonce: Int,
         date: Date,
+        coin: Coin,
         localizedOperations: [LocalizedOperationObject],
         state: TransactionState
     ) {
-
         self.init()
         self.id = id
+        self.uniqueID = from + "-" + String(nonce)
         self.blockNumber = blockNumber
         self.from = from
         self.to = to
@@ -44,6 +53,7 @@ class Transaction: Object, Decodable {
         self.gasUsed = gasUsed
         self.nonce = nonce
         self.date = date
+        self.coin = coin
         self.internalState = state.rawValue
 
         let list = List<LocalizedOperationObject>()
@@ -67,6 +77,7 @@ class Transaction: Object, Decodable {
         case timeStamp // Convert from timestamp
         case operations // Operations needs custom decoding
         case error // Only to throw
+        case coin
     }
 
     convenience required init(from decoder: Decoder) throws {
@@ -77,6 +88,7 @@ class Transaction: Object, Decodable {
         let to = try container.decode(String.self, forKey: .to)
         let value = try container.decode(String.self, forKey: .value)
         let gas = try container.decode(String.self, forKey: .gas)
+        let coin = try container.decode(Coin.self, forKey: .coin)
         let gasPrice = try container.decode(String.self, forKey: .gasPrice)
         let gasUsed = try container.decode(String.self, forKey: .gasUsed)
         let rawNonce = try container.decode(Int.self, forKey: .nonce)
@@ -85,7 +97,7 @@ class Transaction: Object, Decodable {
         let operations = try container.decode([LocalizedOperationObject].self, forKey: .operations)
 
         guard
-            let fromAddress = Address(string: from) else {
+            let fromAddress = EthereumAddress(string: from) else {
                 let context = DecodingError.Context(codingPath: [TransactionCodingKeys.from],
                                                     debugDescription: "Address can't be decoded as a TrustKeystore.Address")
                 throw DecodingError.dataCorrupted(context)
@@ -98,37 +110,47 @@ class Transaction: Object, Decodable {
             return .completed
         }()
 
-        self.init(id: id,
-                  blockNumber: blockNumber,
-                  from: fromAddress.description,
-                  to: to,
-                  value: value,
-                  gas: gas,
-                  gasPrice: gasPrice,
-                  gasUsed: gasUsed,
-                  nonce: String(rawNonce),
-                  date: Date(timeIntervalSince1970: TimeInterval(timeStamp) ?? 0),
-                  localizedOperations: operations,
-                  state: state)
-    }
-
-    convenience init(
-        id: String,
-        date: Date,
-        state: TransactionState
-    ) {
-        self.init()
-        self.id = id
-        self.date = date
-        self.internalState = state.rawValue
+        self.init(
+            id: id,
+            blockNumber: blockNumber,
+            from: fromAddress.description,
+            to: to,
+            value: value,
+            gas: gas,
+            gasPrice: gasPrice,
+            gasUsed: gasUsed,
+            nonce: rawNonce,
+            date: Date(timeIntervalSince1970: TimeInterval(timeStamp) ?? 0),
+            coin: coin,
+            localizedOperations: operations,
+            state: state
+        )
     }
 
     override static func primaryKey() -> String? {
-        return "id"
+        return "uniqueID"
     }
 
     var state: TransactionState {
         return TransactionState(int: self.internalState)
+    }
+
+    var toAddress: EthereumAddress? {
+        return EthereumAddress(string: to)
+    }
+
+    var fromAddress: EthereumAddress? {
+        return EthereumAddress(string: from)
+    }
+
+    var contractAddress: EthereumAddress? {
+        guard
+            let operation = operation,
+            let contract = operation.contract,
+            let contractAddress = EthereumAddress(string: contract) else {
+                return .none
+        }
+        return contractAddress
     }
 }
 

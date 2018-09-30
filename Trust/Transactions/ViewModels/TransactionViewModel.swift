@@ -1,49 +1,54 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
 import BigInt
+import TrustKeystore
 
 struct TransactionViewModel {
 
     private let transaction: Transaction
     private let config: Config
-    private let chainState: ChainState
-    private let currentWallet: Wallet
+    private let currentAccount: Account
     private let shortFormatter = EtherNumberFormatter.short
+    private let balanceFormatter = EtherNumberFormatter.balance
     private let fullFormatter = EtherNumberFormatter.full
+    private let server: RPCServer
+    private let token: TokenObject
 
     init(
         transaction: Transaction,
         config: Config,
-        chainState: ChainState,
-        currentWallet: Wallet
+        currentAccount: Account,
+        server: RPCServer,
+        token: TokenObject
     ) {
         self.transaction = transaction
         self.config = config
-        self.chainState = chainState
-        self.currentWallet = currentWallet
+        self.currentAccount = currentAccount
+        self.server = server
+        self.token = token
     }
 
     var transactionFrom: String {
-        guard let operation = transaction.operation else { return transaction.from }
-        return operation.from
+        switch token.type {
+        case .coin: return transaction.from
+        case .ERC20: return transaction.operation?.from ?? transaction.from
+        }
     }
 
     var transactionTo: String {
-        guard let operation = transaction.operation else { return transaction.to }
-        return operation.to
+        switch token.type {
+        case .coin: return transaction.to
+        case .ERC20: return transaction.operation?.to ?? transaction.to
+        }
     }
 
     var direction: TransactionDirection {
-        if currentWallet.address.description == transactionTo || currentWallet.address.description.lowercased() == transactionTo.lowercased() {
+        if currentAccount.address.description == transactionTo || currentAccount.address.description.lowercased() == transactionTo.lowercased() {
             return .incoming
         }
         return .outgoing
-    }
-
-    var confirmations: Int? {
-        return chainState.confirmations(fromBlock: transaction.blockNumber)
     }
 
     var amountTextColor: UIColor {
@@ -61,33 +66,6 @@ struct TransactionViewModel {
         return transactionValue(for: fullFormatter)
     }
 
-    var shortAmountAttributedString: NSAttributedString {
-        return amountAttributedString(for: shortValue)
-    }
-
-    var fullAmountAttributedString: NSAttributedString {
-        return amountAttributedString(for: fullValue)
-    }
-
-    func amountAttributedString(for value: TransactionValue) -> NSAttributedString {
-        let amount = NSAttributedString(
-            string: amountWithSign(for: value.amount),
-            attributes: [
-                .font: UIFont.systemFont(ofSize: 24),
-                .foregroundColor: amountTextColor,
-            ]
-        )
-
-        let currency = NSAttributedString(
-            string: " " + value.symbol,
-            attributes: [
-                .font: UIFont.systemFont(ofSize: 14),
-            ]
-        )
-
-        return amount + currency
-    }
-
     func amountWithSign(for amount: String) -> String {
         guard amount != "0" else { return amount }
         switch direction {
@@ -97,15 +75,50 @@ struct TransactionViewModel {
     }
 
     private func transactionValue(for formatter: EtherNumberFormatter) -> TransactionValue {
-        if let operation = transaction.operation, let symbol = operation.symbol {
-            return TransactionValue(
-                amount: formatter.string(from: BigInt(operation.value) ?? BigInt(), decimals: operation.decimals),
-                symbol: symbol
-            )
+        switch token.type {
+        case .coin:
+            return transactionValue
+        case .ERC20:
+            if let operation = transaction.operation, let symbol = operation.symbol {
+                return TransactionValue(
+                    amount: formatter.string(from: BigInt(operation.value) ?? BigInt(), decimals: operation.decimals),
+                    symbol: symbol
+                )
+            }
+            return transactionValue
         }
+    }
+
+    private var transactionValue: TransactionValue {
         return TransactionValue(
-            amount: formatter.string(from: BigInt(transaction.value) ?? BigInt()),
-            symbol: config.server.symbol
+            amount: EtherNumberFormatter.short.string(from: BigInt(transaction.value) ?? BigInt()),
+            symbol: server.symbol
         )
+    }
+
+    var statusImage: UIImage? {
+        switch transaction.state {
+        case .error, .unknown, .failed, .deleted:
+            return R.image.transaction_error()
+        case .completed:
+            switch direction {
+            case .incoming:
+                return R.image.transaction_received()
+            case .outgoing:
+                return R.image.transaction_sent()
+            }
+        case .pending:
+            return R.image.transaction_pending()
+        }
+    }
+
+    var amountText: String {
+        let value = shortValue
+        return amountWithSign(for: value.amount) + " " + value.symbol
+    }
+
+    var amountFullText: String {
+        let value = transactionValue(for: balanceFormatter)
+        return amountWithSign(for: value.amount) + " " + value.symbol
     }
 }

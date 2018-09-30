@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
@@ -8,8 +8,8 @@ protocol AddCustomNetworkCoordinatorDelegate: class {
     func didCancel(in coordinator: AddCustomNetworkCoordinator)
 }
 
-class AddCustomNetworkCoordinator: Coordinator {
-    let navigationController: UINavigationController
+final class AddCustomNetworkCoordinator: Coordinator {
+    let navigationController: NavigationController
     var coordinators: [Coordinator] = []
     weak var delegate: AddCustomNetworkCoordinatorDelegate?
 
@@ -28,7 +28,7 @@ class AddCustomNetworkCoordinator: Coordinator {
     }()
 
     init(
-        navigationController: UINavigationController = NavigationController()
+        navigationController: NavigationController = NavigationController()
     ) {
         self.navigationController = navigationController
         self.navigationController.modalPresentationStyle = .formSheet

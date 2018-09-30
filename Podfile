@@ -8,8 +8,9 @@ target 'Trust' do
   pod 'BigInt', '~> 3.0'
   pod 'R.swift'
   pod 'JSONRPCKit', :git=> 'https://github.com/bricklife/JSONRPCKit.git'
+  pod 'PromiseKit', '~> 6.0'
   pod 'APIKit'
-  pod 'Eureka', '~> 4.0.1'
+  pod 'Eureka'
   pod 'MBProgressHUD'
   pod 'StatefulViewController'
   pod 'QRCodeReaderViewController', :git=>'https://github.com/yannickl/QRCodeReaderViewController.git', :branch=>'master'
@@ -17,20 +18,17 @@ target 'Trust' do
   pod 'SwiftLint'
   pod 'SeedStackViewController'
   pod 'RealmSwift'
-  pod 'Lokalise'
   pod 'Moya', '~> 10.0.1'
-  pod 'JavaScriptKit'
-  pod 'CryptoSwift', :git=>'https://github.com/krzyzanowskim/CryptoSwift', :branch=>'master'
-  pod 'Fabric'
-  pod 'Crashlytics'
+  pod 'CryptoSwift', '~> 0.10.0'
   pod 'Kingfisher', '~> 4.0'
-  pod 'TrustKeystore', '~> 0.3.1'
+  pod 'TrustCore', :git=>'https://github.com/TrustWallet/trust-core', :branch=>'master'
+  pod 'TrustKeystore', :git=>'https://github.com/TrustWallet/trust-keystore', :branch=>'master'
+  pod 'TrezorCrypto'
   pod 'Branch'
-  # pod 'web3swift', :git=>'https://github.com/BANKEX/web3swift', :branch=>'master'
   pod 'SAMKeychain'
-  pod 'TrustWeb3Provider', :git=>'https://github.com/TrustWallet/trust-web3-provider', :branch=>'master'
-  pod 'JdenticonSwift'
+  pod 'TrustWeb3Provider', :git=>'https://github.com/TrustWallet/trust-web3-provider', :commit=>'f4e0ebb1b8fa4812637babe85ef975d116543dfd'
   pod 'URLNavigator'
+  pod 'TrustWalletSDK', :git=>'https://github.com/TrustWallet/TrustSDK-iOS', :branch=>'master'
 
   target 'TrustTests' do
     inherit! :search_paths
@@ -44,11 +42,6 @@ target 'Trust' do
 
 end
 
-# target 'OpenInTrust' do
-#   use_frameworks!
-#   pod 'Result'
-# end
-
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     if ['JSONRPCKit'].include? target.name
@@ -61,5 +54,10 @@ post_install do |installer|
         config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-Owholemodule'
       end
     end
+    # if target.name != 'Realm'
+    #     target.build_configurations.each do |config|
+    #         config.build_settings['MACH_O_TYPE'] = 'staticlib'
+    #     end
+    # end
   end
 end

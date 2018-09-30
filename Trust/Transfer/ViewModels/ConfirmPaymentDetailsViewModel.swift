@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import BigInt
@@ -6,36 +6,43 @@ import BigInt
 struct ConfirmPaymentDetailsViewModel {
 
     let transaction: PreviewTransaction
-    let currentBalance: BalanceProtocol?
-    let currencyRate: CurrencyRate?
+    let session: WalletSession
     let config: Config
+    let server: RPCServer
     private let fullFormatter = EtherNumberFormatter.full
-
+    private let balanceFormatter = EtherNumberFormatter.balance
+    private var monetaryAmountViewModel: MonetaryAmountViewModel {
+        return MonetaryAmountViewModel(
+            amount: amount,
+            contract: transaction.transfer.type.address,
+            session: session
+        )
+    }
     init(
         transaction: PreviewTransaction,
         config: Config = Config(),
-        currentBalance: BalanceProtocol?,
-        currencyRate: CurrencyRate?
+        session: WalletSession,
+        server: RPCServer
     ) {
         self.transaction = transaction
-        self.currentBalance = currentBalance
         self.config = config
-        self.currencyRate = currencyRate
+        self.session = session
+        self.server = server
     }
 
     private var gasViewModel: GasViewModel {
-        return GasViewModel(fee: totalFee, symbol: config.server.symbol, currencyRate: currencyRate, formatter: fullFormatter)
+        return GasViewModel(fee: totalFee, server: server, store: session.tokensStorage, formatter: fullFormatter)
     }
 
     private var totalViewModel: GasViewModel {
 
         var value: BigInt = totalFee
 
-        if case TransferType.ether(_) = transaction.transferType {
+        if case TransferType.ether(_) = transaction.transfer.type {
             value += transaction.value
         }
 
-        return GasViewModel(fee: value, symbol: config.server.symbol, currencyRate: currencyRate, formatter: fullFormatter)
+        return GasViewModel(fee: value, server: server, store: session.tokensStorage, formatter: fullFormatter)
     }
 
     private var totalFee: BigInt {
@@ -46,54 +53,59 @@ struct ConfirmPaymentDetailsViewModel {
         return transaction.gasLimit
     }
 
-    var amount: String {
-        return fullFormatter.string(from: transaction.value)
+    var currentWalletDescriptionString: String {
+        let viewModel = WalletInfoViewModel(wallet: session.account)
+        let address = transaction.account.address.description
+        return viewModel.name + " " + ("(\(address.prefix(10))...\(address.suffix(8)))")
     }
 
     var paymentFromTitle: String {
-        return NSLocalizedString("confirmPayment.from.label.title", value: "From", comment: "")
+        return R.string.localizable.transactionFromLabelTitle()
     }
 
-    var paymentToTitle: String {
-        return NSLocalizedString("confirmPayment.to.label.title", value: "To", comment: "")
-    }
-    var paymentToText: String {
-        return transaction.address?.description ?? "--"
-    }
-
-    var gasPriceTitle: String {
-        return NSLocalizedString("confirmPayment.gasPrice.label.title", value: "Gas Price", comment: "")
+    var requesterTitle: String {
+        switch transaction.transfer.type {
+        case .dapp:
+            return NSLocalizedString("confirmPayment.dapp.label.title", value: "DApp", comment: "")
+        case .ether, .token:
+            return NSLocalizedString("confirmPayment.to.label.title", value: "To", comment: "")
+        }
     }
 
-    var gasPriceText: String {
-        let unit = UnitConfiguration.gasPriceUnit
-        let amount = fullFormatter.string(from: transaction.gasPrice, units: UnitConfiguration.gasPriceUnit)
-        return  String(
+    var requesterText: String {
+        switch transaction.transfer.type {
+        case .dapp(_, let request):
+            return request.url?.absoluteString ?? ""
+        case .ether, .token:
+            return transaction.address?.description ?? ""
+        }
+    }
+
+    var amountTitle: String {
+        return NSLocalizedString("confirmPayment.amount.label.title", value: "Amount", comment: "")
+    }
+
+    var amountText: String {
+        return String(
             format: "%@ %@",
-            amount,
-            unit.name
+            amountString,
+            monetaryAmountString ?? ""
         )
     }
 
-    var feeTitle: String {
-        return NSLocalizedString("confirmPayment.gasFee.label.title", value: "Network Fee", comment: "")
+    var estimatedFeeTitle: String {
+        return R.string.localizable.networkFee()
     }
 
-    var feeText: String {
-        let feeAndSymbol = gasViewModel.feeText
-        let warningFee = BigInt(EthereumUnit.ether.rawValue) / BigInt(20)
-        guard totalFee <= warningFee else {
-            return feeAndSymbol + " - WARNING. HIGH FEE."
-        }
-        return feeAndSymbol
-    }
-
-    var gasLimitTitle: String {
-        return NSLocalizedString("confirmPayment.gasLimit.label.title", value: "Gas Limit", comment: "")
-    }
-
-    var gasLimitText: String {
-        return gasLimit.description
+    var estimatedFeeText: String {
+        let unit = UnitConfiguration.gasPriceUnit
+        let amount = fullFormatter.string(from: transaction.gasPrice, units: UnitConfiguration.gasPriceUnit)
+        return  String(
+            format: "%@ %@ (%@)",
+            amount,
+            unit.name,
+            gasViewModel.monetaryFee ?? ""
+        )
     }
 
     var amountTextColor: UIColor {
@@ -105,46 +117,43 @@ struct ConfirmPaymentDetailsViewModel {
     }
 
     var totalText: String {
-        return totalViewModel.feeText
+        let feeDouble = gasViewModel.feeCurrency ?? 0
+        let amountDouble = monetaryAmountViewModel.amountCurrency ?? 0
+
+        guard let totalAmount = FeeCalculator.format(fee: feeDouble + amountDouble) else {
+            return "--"
+        }
+        return totalAmount
     }
 
-    var dataTitle: String {
-        return NSLocalizedString("confirmPayment.data.label.title", value: "Data", comment: "")
-    }
-
-    var dataText: String {
-        return transaction.data.description
-    }
-
-    var amountAttributedString: NSAttributedString {
-        switch transaction.transferType {
+    var amount: String {
+        switch transaction.transfer.type {
         case .token(let token):
-            return amountAttributedText(
-                string: fullFormatter.string(from: transaction.value, decimals: token.decimals)
-            )
-        case .ether:
-            return amountAttributedText(
-                string: fullFormatter.string(from: transaction.value)
-            )
+            return balanceFormatter.string(from: transaction.value, decimals: token.decimals)
+        case .ether(let token, _), .dapp(let token, _):
+            return balanceFormatter.string(from: transaction.value, decimals: token.decimals)
         }
     }
 
-    private func amountAttributedText(string: String) -> NSAttributedString {
-        let amount = NSAttributedString(
-            string: amountWithSign(for: string),
-            attributes: [
-                .font: UIFont.systemFont(ofSize: 28),
-                .foregroundColor: amountTextColor,
-            ]
+    var transactionHeaderViewModel: TransactionHeaderViewViewModel {
+        return TransactionHeaderViewViewModel(
+            amountString: amountString,
+            amountTextColor: amountTextColor,
+            monetaryAmountString: monetaryAmountString,
+            statusImage: statusImage
         )
+    }
 
-        let currency = NSAttributedString(
-            string: " \(transaction.transferType.symbol(server: config.server))",
-            attributes: [
-                .font: UIFont.systemFont(ofSize: 20),
-            ]
-        )
-        return amount + currency
+    var amountString: String {
+        return amountWithSign(for: amount) + " \(transaction.transfer.type.symbol(server: server))"
+    }
+
+    var monetaryAmountString: String? {
+        return monetaryAmountViewModel.amountText
+    }
+
+    var statusImage: UIImage? {
+        return R.image.transaction_sent()
     }
 
     private func amountWithSign(for amount: String) -> String {

@@ -1,22 +1,25 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
 import RealmSwift
+import TrustCore
+import PromiseKit
 import TrustKeystore
 
 protocol TokensViewModelDelegate: class {
     func refresh()
 }
 
-class TokensViewModel: NSObject {
+final class TokensViewModel: NSObject {
     let config: Config
 
     let store: TokensDataStore
     var tokensNetwork: NetworkProtocol
     let tokens: Results<TokenObject>
     var tokensObserver: NotificationToken?
-    let address: Address
+    let transactionStore: TransactionsStorage
+    let session: WalletSession
 
     var headerBalance: String {
         return amount ?? "0.00"
@@ -42,10 +45,6 @@ class TokensViewModel: NSObject {
         return .white
     }
 
-    var hasContent: Bool {
-        return !tokens.isEmpty
-    }
-
     var footerTitle: String {
         return NSLocalizedString("tokens.footer.label.title", value: "Tokens will appear automagically. Tap + to add manually.", comment: "")
     }
@@ -58,32 +57,27 @@ class TokensViewModel: NSObject {
         return UIFont.systemFont(ofSize: 13, weight: .light)
     }
 
+    var all: [TokenViewModel] {
+        return Array(tokens).map { token in
+            return TokenViewModel(token: token, config: config, store: store, transactionsStore: transactionStore, tokensNetwork: tokensNetwork, session: session)
+        }
+    }
+
     weak var delegate: TokensViewModelDelegate?
 
-    private var serialOperationQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.qualityOfService = .background
-        queue.maxConcurrentOperationCount = 1
-        return queue
-    }()
-
-    private var parallelOperationQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.qualityOfService = .background
-        return queue
-    }()
-
     init(
+        session: WalletSession,
         config: Config = Config(),
-        address: Address,
         store: TokensDataStore,
-        tokensNetwork: NetworkProtocol
+        tokensNetwork: NetworkProtocol,
+        transactionStore: TransactionsStorage
     ) {
+        self.session = session
         self.config = config
-        self.address = address
         self.store = store
         self.tokensNetwork = tokensNetwork
         self.tokens = store.tokens
+        self.transactionStore = transactionStore
         super.init()
     }
 
@@ -92,18 +86,8 @@ class TokensViewModel: NSObject {
     }
 
     private var amount: String? {
-        var totalAmount: Double = 0
-        tokens.forEach { token in
-            totalAmount += amount(for: token)
-        }
+        let totalAmount = tokens.lazy.map { $0.balance }.reduce(0.0, +)
         return CurrencyFormatter.formatter.string(from: NSNumber(value: totalAmount))
-    }
-
-    private func amount(for token: TokenObject) -> Double {
-        guard let tickersSymbol = store.tickers().first(where: { $0.contract == token.contract }) else { return 0 }
-        let tokenValue = CurrencyFormatter.plainFormatter.string(from: token.valueBigInt, decimals: token.decimals).doubleValue
-        let price = Double(tickersSymbol.price) ?? 0
-        return tokenValue * price
     }
 
     func numberOfItems(for section: Int) -> Int {
@@ -120,76 +104,89 @@ class TokensViewModel: NSObject {
 
     func cellViewModel(for path: IndexPath) -> TokenViewCellViewModel {
         let token = tokens[path.row]
-        return TokenViewCellViewModel(token: token, ticker: store.coinTicker(for: token))
-    }
-
-    func updateEthBalance(completion: ((_ completed: Bool) -> Void)? = nil) {
-        tokensNetwork.tokenBalance(for: TokensDataStore.etherToken().address) { [weak self] (balance) in
-            guard let `self` = self, let balance = balance else {
-                completion?(true)
-                return
-            }
-            self.store.update(balances: [TokensDataStore.etherToken().address: balance.value])
-            completion?(true)
-        }
-    }
-
-    private func runOperations() {
-        guard serialOperationQueue.operationCount == 0 else {
-            self.parallelOperations(for: self.store.enabledObject)
-            return
-        }
-
-        let tokensOperation = TokensOperation(network: tokensNetwork, address: address)
-
-        serialOperationQueue.addOperation(tokensOperation)
-
-        tokensOperation.completionBlock = { [weak self] in
-            DispatchQueue.main.async {
-                self?.store.update(tokens: tokensOperation.tokens, action: .updateInfo)
-                if let tokens = self?.store.enabledObject {
-                    self?.parallelOperations(for: tokens)
-                }
-            }
-        }
-    }
-
-    private func parallelOperations(for tokens: [TokenObject]) {
-        guard parallelOperationQueue.operationCount == 0, !tokens.isEmpty else {
-            return
-        }
-
-        let tokensBalanceOperation = TokensBalanceOperation(
-            network: tokensNetwork,
-            addresses: tokens.map { $0.address }
+        return TokenViewCellViewModel(
+            viewModel: TokenObjectViewModel(token: token),
+            ticker: store.coinTicker(by: token.address),
+            store: transactionStore
         )
+    }
 
-        tokensBalanceOperation.completionBlock = { [weak self] in
-            DispatchQueue.main.async {
-                self?.store.update(balances: tokensBalanceOperation.balances)
-            }
+    func updateBalances() {
+        balances(for: Array(store.tokensBalance))
+    }
+
+    private func tokensInfo() {
+        firstly {
+            tokensNetwork.tokensList()
+        }.done { [weak self] tokens in
+             self?.store.update(tokens: tokens, action: .updateInfo)
+        }.catch { error in
+            NSLog("tokensInfo \(error)")
+        }.finally { [weak self] in
+            guard let strongSelf = self else { return }
+            let tokens = Array(strongSelf.store.tokensBalance)
+            strongSelf.prices(for: tokens)
         }
+    }
 
-        let tokensTickerOperation = TokensTickerOperation(network: tokensNetwork, tokenPrices: tokens.map { TokenPrice(contract: $0.contract, symbol: $0.symbol) })
+    private func prices(for tokens: [TokenObject]) {
+        let prices = tokens.map { TokenPrice(contract: $0.contract, symbol: $0.symbol) }
+        firstly {
+            tokensNetwork.tickers(with: prices)
+        }.done { [weak self] tickers in
+            guard let strongSelf = self else { return }
+            strongSelf.store.saveTickers(tickers: tickers)
+        }.catch { error in
+            NSLog("prices \(error)")
+        }.finally { [weak self] in
+            guard let strongSelf = self else { return }
+            strongSelf.balances(for: tokens)
+        }
+    }
 
-        tokensTickerOperation.completionBlock = { [weak self] in
-            self?.store.saveTickers(tickers: tokensTickerOperation.tickers)
+    private func balances(for tokens: [TokenObject]) {
+        let balances: [BalanceNetworkProvider] = tokens.compactMap {
+            return TokenViewModel.balance(for: $0, wallet: session.account)
+        }
+        let operationQueue: OperationQueue = OperationQueue()
+        operationQueue.qualityOfService = .background
+
+        let balancesOperations = Array(balances.lazy.map {
+            TokenBalanceOperation(balanceProvider: $0, store: self.store)
+        })
+
+        operationQueue.operations.onFinish { [weak self] in
             DispatchQueue.main.async {
                 self?.delegate?.refresh()
             }
         }
 
-        parallelOperationQueue.addOperations([tokensBalanceOperation, tokensTickerOperation], waitUntilFinished: false)
+        operationQueue.addOperations(balancesOperations, waitUntilFinished: false)
+    }
+
+    func updatePendingTransactions() {
+        all.forEach { $0.updatePending() }
     }
 
     func fetch() {
-        updateEthBalance()
-        runOperations()
+        tokensInfo()
+        updatePendingTransactions()
     }
 
-    func cancelOperations() {
+    func invalidateTokensObservation() {
+        tokensObserver?.invalidate()
         tokensObserver = nil
-        serialOperationQueue.cancelAllOperations()
-        parallelOperationQueue.cancelAllOperations()
+    }
+}
+
+extension Array where Element: Operation {
+    /// Execute block after all operations from the array.
+    func onFinish(block: @escaping () -> Void) {
+        let doneOperation = BlockOperation(block: block)
+        self.forEach { [unowned doneOperation] in
+            doneOperation.addDependency($0)
+
+        }
+        OperationQueue().addOperation(doneOperation)
     }
 }

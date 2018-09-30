@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 
@@ -17,11 +17,18 @@ struct SettingsViewModel {
             RPCServer.main,
             RPCServer.classic,
             RPCServer.poa,
-            //RPCServer.callisto,
-            RPCServer.kovan,
-            RPCServer.ropsten,
-            RPCServer.rinkeby,
-            RPCServer.sokol,
+            RPCServer.callisto,
+            RPCServer.gochain,
+        ]
+    }
+
+    var autoLockOptions: [AutoLock] {
+        return [
+            AutoLock.immediate,
+            AutoLock.oneMinute,
+            AutoLock.fiveMinutes,
+            AutoLock.oneHour,
+            AutoLock.fiveHours,
         ]
     }
 
@@ -43,6 +50,10 @@ struct SettingsViewModel {
 
     var networkTitle: String {
         return NSLocalizedString("settings.network.button.title", value: "Network", comment: "")
+    }
+
+    var autoLockTitle: String {
+        return NSLocalizedString("settings.autoLock.button.title", value: "Auto-Lock", comment: "")
     }
 
     var currencyTitle: String {

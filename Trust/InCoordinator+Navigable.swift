@@ -1,9 +1,11 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import URLNavigator
+import TrustWalletSDK
 
 extension InCoordinator: URLNavigable {
+
     func register(with navigator: Navigator) {
         navigator.handle(URLSchemes.browser) { url, _, _ in
             guard let target = url.queryParameters["target"],
@@ -12,6 +14,18 @@ extension InCoordinator: URLNavigable {
             }
             self.showTab(.browser(openURL: targetUrl))
             return true
+        }
+
+        navigator.handle("app://sign-transaction") { url, _, _ in
+            return self.localSchemeCoordinator?.trustWalletSDK.handleOpen(url: url as! URL) ?? false
+        }
+
+        navigator.handle("app://sign-message") { url, _, _ in
+            return self.localSchemeCoordinator?.trustWalletSDK.handleOpen(url: url as! URL) ?? false
+        }
+
+        navigator.handle("app://sign-personal-message") { url, _, _ in
+            return self.localSchemeCoordinator?.trustWalletSDK.handleOpen(url: url as! URL) ?? false
         }
     }
 }

@@ -1,26 +1,24 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import RealmSwift
-import TrustKeystore
+import TrustCore
 
-class MigrationInitializer: Initializer {
+final class MigrationInitializer: Initializer {
 
-    let account: Wallet
-    let chainID: Int
+    let account: WalletInfo
     lazy var config: Realm.Configuration = {
-        return RealmConfiguration.configuration(for: account, chainID: chainID)
+        return RealmConfiguration.configuration(for: account)
     }()
 
     init(
-        account: Wallet, chainID: Int
+        account: WalletInfo
     ) {
         self.account = account
-        self.chainID = chainID
     }
 
     func perform() {
-        config.schemaVersion = 42
+        config.schemaVersion = Config.dbMigrationSchemaVersion
         config.migrationBlock = { migration, oldSchemaVersion in
             switch oldSchemaVersion {
             case 0...32:
@@ -29,11 +27,18 @@ class MigrationInitializer: Initializer {
                     guard let oldObject = oldObject else { return }
                     guard let newObject = newObject else { return }
                     guard let value = oldObject["contract"] as? String else { return }
-                    guard let address = Address(string: value) else { return }
+                    guard let address = EthereumAddress(string: value) else { return }
 
                     newObject["contract"] = address.description
                 }
-            default: break
+                fallthrough
+            case 33...49:
+                migration.deleteData(forType: Transaction.className)
+                fallthrough
+            case 50...52:
+                migration.deleteData(forType: CoinTicker.className)
+            default:
+                break
             }
         }
     }

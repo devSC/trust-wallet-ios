@@ -1,19 +1,25 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import UIKit
 import StackViewController
 import Result
 import SafariServices
 
-class TransactionViewController: UIViewController {
+protocol TransactionViewControllerDelegate: class {
+    func didPressURL(_ url: URL)
+}
+
+final class TransactionViewController: UIViewController {
 
     private lazy var viewModel: TransactionDetailsViewModel = {
-        return .init(
+        return TransactionDetailsViewModel(
             transaction: self.transaction,
             config: self.config,
-            chainState: self.session.chainState,
-            currentWallet: self.session.account,
-            currencyRate: self.session.balanceCoordinator.currencyRate
+            chainState: ChainState(server: tokenViewModel.server),
+            currentAccount: tokenViewModel.currentAccount,
+            session: session,
+            server: tokenViewModel.server,
+            token: tokenViewModel.token
         )
     }()
     let stackViewController = StackViewController()
@@ -21,16 +27,20 @@ class TransactionViewController: UIViewController {
     let session: WalletSession
     let transaction: Transaction
     let config = Config()
+    let tokenViewModel: TokenViewModel
+    weak var delegate: TransactionViewControllerDelegate?
 
     init(
         session: WalletSession,
-        transaction: Transaction
+        transaction: Transaction,
+        tokenViewModel: TokenViewModel
     ) {
         self.session = session
         self.transaction = transaction
+        self.tokenViewModel = tokenViewModel
 
         stackViewController.scrollView.alwaysBounceVertical = true
-        stackViewController.stackView.spacing = 10
+        stackViewController.stackView.spacing = TransactionAppearance.spacing
 
         super.init(nibName: nil, bundle: nil)
 
@@ -39,20 +49,36 @@ class TransactionViewController: UIViewController {
 
         let header = TransactionHeaderView()
         header.translatesAutoresizingMaskIntoConstraints = false
-        header.amountLabel.attributedText = viewModel.amountAttributedString
+        header.configure(for: viewModel.transactionHeaderViewModel)
+
+        let dividerColor = Colors.whisper
+        let dividerOffset = UIEdgeInsets(top: 0, left: 26, bottom: 0, right: 26)
+
+        let confirmationView = item(title: viewModel.confirmationLabelTitle, value: viewModel.confirmation)
+        confirmationView.widthAnchor.constraint(equalToConstant: 140).isActive = true
 
         var items: [UIView] = [
             .spacer(),
             header,
-            TransactionAppearance.divider(color: Colors.lightGray, alpha: 0.3),
-            item(title: viewModel.fromLabelTitle, value: viewModel.from),
-            item(title: viewModel.toLabelTitle, value: viewModel.to),
+            TransactionAppearance.divider(color: dividerColor, alpha: 1, layoutInsets: dividerOffset),
+            item(title: viewModel.addressTitle, value: viewModel.address),
+            TransactionAppearance.divider(color: dividerColor, alpha: 1, layoutInsets: dividerOffset),
+            item(
+                title: viewModel.transactionIDLabelTitle,
+                value: viewModel.transactionID,
+                subTitleMinimumScaleFactor: 1
+            ),
+            TransactionAppearance.divider(color: dividerColor, alpha: 1, layoutInsets: dividerOffset),
             item(title: viewModel.gasFeeLabelTitle, value: viewModel.gasFee),
-            item(title: viewModel.confirmationLabelTitle, value: viewModel.confirmation),
-            TransactionAppearance.divider(color: Colors.lightGray, alpha: 0.3),
-            item(title: viewModel.transactionIDLabelTitle, value: viewModel.transactionID),
-            item(title: viewModel.createdAtLabelTitle, value: viewModel.createdAt),
-            item(title: viewModel.blockNumberLabelTitle, value: viewModel.blockNumber),
+            TransactionAppearance.divider(color: dividerColor, alpha: 1),
+            TransactionAppearance.horizontalItem(views: [
+                confirmationView,
+                TransactionAppearance.divider(direction: .vertical, color: dividerColor, alpha: 1, layoutInsets: .zero),
+                item(title: viewModel.createdAtLabelTitle, value: viewModel.createdAt),
+            ]),
+            TransactionAppearance.divider(color: dividerColor, alpha: 1, layoutInsets: dividerOffset),
+            item(title: viewModel.nonceTitle, value: viewModel.nonce),
+            TransactionAppearance.divider(color: dividerColor, alpha: 1, layoutInsets: dividerOffset),
         ]
 
         if viewModel.detailsAvailable {
@@ -62,6 +88,7 @@ class TransactionViewController: UIViewController {
         for item in items {
             stackViewController.addItem(item)
         }
+        stackViewController.stackView.preservesSuperviewLayoutMargins = true
 
         displayChildViewController(viewController: stackViewController)
 
@@ -70,10 +97,15 @@ class TransactionViewController: UIViewController {
         }
     }
 
-    private func item(title: String, value: String) -> UIView {
+    private func item(
+        title: String,
+        value: String,
+        subTitleMinimumScaleFactor: CGFloat  = 0.7
+    ) -> UIView {
         return  TransactionAppearance.item(
             title: title,
-            subTitle: value
+            subTitle: value,
+            subTitleMinimumScaleFactor: subTitleMinimumScaleFactor
         ) { [weak self] in
             self?.showAlertSheet(title: $0, value: $1, sourceView: $2)
         }
@@ -81,7 +113,7 @@ class TransactionViewController: UIViewController {
 
     private func moreDetails() -> UIView {
         let button = Button(size: .large, style: .border)
-        button.setTitle(NSLocalizedString("More Details", value: "More Details", comment: ""), for: .normal)
+        button.setTitle(R.string.localizable.moreDetails(), for: .normal)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.addTarget(self, action: #selector(more), for: .touchUpInside)
 
@@ -106,7 +138,7 @@ class TransactionViewController: UIViewController {
         let copyAction = UIAlertAction(title: NSLocalizedString("Copy", value: "Copy", comment: ""), style: .default) { _ in
             UIPasteboard.general.string = value
         }
-        let cancelAction = UIAlertAction(title: NSLocalizedString("Cancel", value: "Cancel", comment: ""), style: .cancel) { _ in }
+        let cancelAction = UIAlertAction(title: R.string.localizable.cancel(), style: .cancel) { _ in }
         alertController.addAction(copyAction)
         alertController.addAction(cancelAction)
         present(alertController, animated: true, completion: nil)
@@ -114,17 +146,12 @@ class TransactionViewController: UIViewController {
 
     @objc func more() {
         guard let url = viewModel.detailsURL else { return }
-        openURL(url)
+        delegate?.didPressURL(url)
     }
 
     @objc func share(_ sender: UIBarButtonItem) {
         guard let item = viewModel.shareItem else { return }
-        let activityViewController = UIActivityViewController(
-            activityItems: [
-                item,
-            ],
-            applicationActivities: nil
-        )
+        let activityViewController = UIActivityViewController.make(items: [item])
         activityViewController.popoverPresentationController?.barButtonItem = sender
         navigationController?.present(activityViewController, animated: true, completion: nil)
     }

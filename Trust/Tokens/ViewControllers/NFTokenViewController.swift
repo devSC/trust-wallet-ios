@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import UIKit
@@ -9,7 +9,7 @@ protocol NFTokenViewControllerDelegate: class {
     func didPressLink(url: URL, in viewController: NFTokenViewController)
 }
 
-class NFTokenViewController: UIViewController {
+final class NFTokenViewController: UIViewController {
 
     lazy var scrollView: UIScrollView = {
         let scrollView = UIScrollView()
@@ -26,33 +26,52 @@ class NFTokenViewController: UIViewController {
         return stackView
     }()
 
-    let token: NonFungibleTokenObject
+    lazy var sendButton: UIButton = {
+        let sendButton = Button(size: .normal, style: .border)
+        sendButton.translatesAutoresizingMaskIntoConstraints = false
+        sendButton.setTitle(viewModel.sendButtonTitle, for: .normal)
+        sendButton.addTarget(self, action: #selector(sendTap), for: .touchUpInside)
+        return sendButton
+    }()
+
+    let token: CollectibleTokenObject
+    let server: RPCServer
+
+    lazy var imageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.kf.setImage(
+            with: viewModel.imageURL,
+            placeholder: viewModel.placeholder
+        )
+        imageView.contentMode = .scaleAspectFit
+        return imageView
+    }()
 
     lazy var viewModel: NFTDetailsViewModel = {
-        return NFTDetailsViewModel(token: token)
+        return NFTDetailsViewModel(token: token, server: server)
     }()
     weak var delegate: NFTokenViewControllerDelegate?
 
-    init(token: NonFungibleTokenObject) {
+    init(token: CollectibleTokenObject, server: RPCServer) {
         self.token = token
+        self.server = server
         super.init(nibName: nil, bundle: nil)
 
         self.view.addSubview(scrollView)
         scrollView.addSubview(stackView)
 
-        let imageView = UIImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.kf.setImage(
-            with: viewModel.imageURL,
-            placeholder: .none
-        )
-        imageView.contentMode = .scaleAspectFit
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.numberOfLines = 0
+        titleLabel.text = viewModel.title
+        titleLabel.textColor = UIColor.black
 
         let descriptionLabel = UILabel()
         descriptionLabel.translatesAutoresizingMaskIntoConstraints = false
         descriptionLabel.numberOfLines = 0
         descriptionLabel.text = viewModel.descriptionText
-        descriptionLabel.textColor = viewModel.descriptionTextColor
+        descriptionLabel.textColor = UIColor.lightGray
 
         let internalButton = Button(size: .normal, style: .border)
         internalButton.translatesAutoresizingMaskIntoConstraints = false
@@ -64,30 +83,36 @@ class NFTokenViewController: UIViewController {
         externalButton.setTitle(viewModel.externalButtonTitle, for: .normal)
         externalButton.addTarget(self, action: #selector(externalTap), for: .touchUpInside)
 
-
         view.backgroundColor = .white
-        navigationItem.title = viewModel.title
+        title = viewModel.title
         stackView.addArrangedSubview(imageView)
+        stackView.addArrangedSubview(.spacer(height: 15))
+        stackView.addArrangedSubview(titleLabel)
         stackView.addArrangedSubview(.spacer(height: 15))
         stackView.addArrangedSubview(descriptionLabel)
         stackView.addArrangedSubview(.spacer(height: 15))
+        //stackView.addArrangedSubview(sendButton)
+        //stackView.addArrangedSubview(.spacer(height: 15))
         stackView.addArrangedSubview(internalButton)
         stackView.addArrangedSubview(.spacer(height: 10))
         stackView.addArrangedSubview(externalButton)
         stackView.addArrangedSubview(.spacer(height: 10))
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: 100),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             imageView.heightAnchor.constraint(equalToConstant: 260),
-            stackView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
             stackView.topAnchor.constraint(equalTo: scrollView.topAnchor),
             stackView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
             stackView.leadingAnchor.constraint(equalTo: view.readableContentGuide.leadingAnchor),
             stackView.trailingAnchor.constraint(equalTo: view.readableContentGuide.trailingAnchor),
         ])
+    }
+
+    @objc func sendTap() {
+
     }
 
     @objc func internalTap() {

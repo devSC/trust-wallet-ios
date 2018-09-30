@@ -1,8 +1,8 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import BigInt
 import Foundation
-import TrustKeystore
+import TrustCore
 
 struct PendingTransaction: Decodable {
     let blockHash: String
@@ -13,7 +13,7 @@ struct PendingTransaction: Decodable {
     let gasPrice: String
     let hash: String
     let value: String
-    let nonce: String
+    let nonce: Int
 }
 
 extension PendingTransaction {
@@ -36,20 +36,23 @@ extension PendingTransaction {
             gasPrice: BigInt(gasPrice.drop0x, radix: 16)?.description ?? "",
             hash: hash,
             value: BigInt(value.drop0x, radix: 16)?.description ?? "",
-            nonce: BigInt(nonce.drop0x, radix: 16)?.description ?? ""
+            nonce: Int(BigInt(nonce.drop0x, radix: 16)?.description ?? "-1") ?? -1
         )
     }
 }
 
 extension Transaction {
     static func from(
-        transaction: PendingTransaction
+        initialTransaction: Transaction,
+        transaction: PendingTransaction,
+        coin: Coin
     ) -> Transaction? {
         guard
-            let from = Address(string: transaction.from) else {
+            let from = EthereumAddress(string: transaction.from) else {
                 return .none
         }
-        let to = Address(string: transaction.to)?.description ?? transaction.to
+        //TODO; Probably make sense to update values on initialTransaction and not create a new one.
+        let to = EthereumAddress(string: transaction.to)?.description ?? transaction.to
         return Transaction(
             id: transaction.hash,
             blockNumber: Int(transaction.blockNumber) ?? 0,
@@ -61,7 +64,8 @@ extension Transaction {
             gasUsed: "",
             nonce: transaction.nonce,
             date: Date(),
-            localizedOperations: [],
+            coin: coin,
+            localizedOperations: Array(initialTransaction.localizedOperations),
             state: .pending
         )
     }

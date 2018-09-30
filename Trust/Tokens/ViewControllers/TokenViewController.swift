@@ -1,24 +1,29 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import UIKit
-import Kingfisher
+import StatefulViewController
 
 protocol TokenViewControllerDelegate: class {
     func didPressRequest(for token: TokenObject, in controller: UIViewController)
     func didPressSend(for token: TokenObject, in controller: UIViewController)
-    func didPress(transaction: Transaction, in controller: UIViewController)
+    func didPressInfo(for token: TokenObject, in controller: UIViewController)
+    func didPress(viewModel: TokenViewModel, transaction: Transaction, in controller: UIViewController)
 }
 
-class TokenViewController: UIViewController {
+final class TokenViewController: UIViewController {
 
     private let refreshControl = UIRefreshControl()
 
-    private var tableView = UITableView()
+    private var tableView = TransactionsTableView()
 
     private lazy var header: TokenHeaderView = {
-        let view = TokenHeaderView(frame: CGRect(x: 0, y: 0, width: tableView.frame.width, height: 264))
+        let view = TokenHeaderView(frame: CGRect(x: 0, y: 0, width: tableView.frame.width, height: 242))
         return view
     }()
+
+    private var insets: UIEdgeInsets {
+        return UIEdgeInsets(top: header.frame.height + 100, left: 0, bottom: 0, right: 0)
+    }
 
     private var viewModel: TokenViewModel
 
@@ -30,16 +35,11 @@ class TokenViewController: UIViewController {
 
         navigationItem.title = viewModel.title
         view.backgroundColor = .white
-
-        tableView = UITableView(frame: .zero, style: .plain)
+        tableView.tableFooterView = UIView()
         tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.separatorStyle = .none
-        tableView.backgroundColor = .white
         tableView.dataSource = self
         tableView.delegate = self
-        tableView.rowHeight = 68
         tableView.tableHeaderView = header
-
         tableView.register(TransactionViewCell.self, forCellReuseIdentifier: TransactionViewCell.identifier)
         view.addSubview(tableView)
 
@@ -55,26 +55,41 @@ class TokenViewController: UIViewController {
 
         header.buttonsView.requestButton.addTarget(self, action: #selector(request), for: .touchUpInside)
         header.buttonsView.sendButton.addTarget(self, action: #selector(send), for: .touchUpInside)
+        updateHeader()
 
+        // TODO: Enable when finished
+        if isDebug {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .organize, target: self, action: #selector(infoAction))
+        }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
         observToken()
         observTransactions()
-
-        updateHeader()
+        configTableViewStates()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        setupInitialViewState()
+        fetch()
+    }
+
+    private func fetch() {
+        startLoading()
         viewModel.fetch()
     }
 
-    required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    @objc func infoAction() {
+        delegate?.didPressInfo(for: viewModel.token, in: self)
     }
 
     private func observToken() {
         viewModel.tokenObservation { [weak self] in
             self?.refreshControl.endRefreshing()
             self?.updateHeader()
+            self?.endLoading()
         }
     }
 
@@ -82,6 +97,7 @@ class TokenViewController: UIViewController {
         viewModel.transactionObservation { [weak self] in
             self?.refreshControl.endRefreshing()
             self?.tableView.reloadData()
+            self?.endLoading()
         }
     }
 
@@ -98,18 +114,18 @@ class TokenViewController: UIViewController {
         header.fiatAmountLabel.font = viewModel.fiatAmountFont
         header.fiatAmountLabel.textColor = viewModel.fiatAmountTextColor
 
-//        header.currencyAmountLabel.text = viewModel.currencyAmount
-//        header.currencyAmountLabel.textColor = viewModel.currencyAmountTextColor
-//        header.currencyAmountLabel.font = viewModel.currencyAmountFont
-//
-//        header.percentChange.text = viewModel.percentChange
-//        header.percentChange.textColor = viewModel.percentChangeColor
-//        header.percentChange.font = viewModel.percentChangeFont
+        header.marketPriceLabel.text = viewModel.marketPrice
+        header.marketPriceLabel.textColor = viewModel.marketPriceTextColor
+        header.marketPriceLabel.font = viewModel.marketPriceFont
+
+        header.percentChange.text = viewModel.percentChange
+        header.percentChange.textColor = viewModel.percentChangeColor
+        header.percentChange.font = viewModel.percentChangeFont
     }
 
     @objc func pullToRefresh() {
         refreshControl.beginRefreshing()
-        viewModel.fetch()
+        fetch()
     }
 
     @objc func send() {
@@ -118,6 +134,22 @@ class TokenViewController: UIViewController {
 
     @objc func request() {
         delegate?.didPressRequest(for: viewModel.token, in: self)
+    }
+
+    deinit {
+        viewModel.invalidateObservers()
+    }
+
+    private func configTableViewStates() {
+        errorView = ErrorView(insets: insets, onRetry: { [weak self] in
+            self?.fetch()
+        })
+        loadingView = LoadingView(insets: insets)
+        emptyView = TransactionsEmptyView(insets: insets)
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
@@ -137,7 +169,9 @@ extension TokenViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
-        return viewModel.hederView(for: section)
+        return SectionHeader(
+            title: viewModel.titleForHeader(in: section)
+        )
     }
 
     func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
@@ -145,7 +179,13 @@ extension TokenViewController: UITableViewDataSource, UITableViewDelegate {
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        delegate?.didPress(transaction: viewModel.item(for: indexPath.row, section: indexPath.section), in: self)
+        delegate?.didPress(viewModel: viewModel, transaction: viewModel.item(for: indexPath.row, section: indexPath.section), in: self)
         tableView.deselectRow(at: indexPath, animated: true)
+    }
+}
+
+extension TokenViewController: StatefulViewController {
+    func hasContent() -> Bool {
+        return viewModel.hasContent()
     }
 }

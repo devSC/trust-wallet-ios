@@ -1,4 +1,4 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import Foundation
 import RealmSwift
@@ -19,10 +19,6 @@ struct BookmarksViewModel {
 
     var numberOfRows: Int {
         return bookmarksStore.bookmarks.count
-    }
-
-    var title: String {
-        return NSLocalizedString("browser.bookmarks.title", value: "Bookmarks", comment: "")
     }
 
     func bookmark(for indexPath: IndexPath) -> Bookmark {

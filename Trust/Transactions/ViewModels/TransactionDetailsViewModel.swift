@@ -1,8 +1,10 @@
-// Copyright SIX DAY LLC. All rights reserved.
+// Copyright DApps Platform Inc. All rights reserved.
 
 import BigInt
 import Foundation
 import UIKit
+import TrustCore
+import TrustKeystore
 
 struct TransactionDetailsViewModel {
 
@@ -21,29 +23,48 @@ struct TransactionDetailsViewModel {
     private let chainState: ChainState
     private let shortFormatter = EtherNumberFormatter.short
     private let fullFormatter = EtherNumberFormatter.full
-    private let currencyRate: CurrencyRate?
-
+    private let session: WalletSession
+    private let server: RPCServer
+    private let token: TokenObject
+    private var monetaryAmountViewModel: MonetaryAmountViewModel {
+        return MonetaryAmountViewModel(
+            amount: transactionViewModel.shortValue.amount,
+            contract: token.address,
+            session: session
+        )
+    }
     init(
         transaction: Transaction,
         config: Config,
         chainState: ChainState,
-        currentWallet: Wallet,
-        currencyRate: CurrencyRate?
+        currentAccount: Account,
+        session: WalletSession,
+        server: RPCServer,
+        token: TokenObject
     ) {
         self.transaction = transaction
         self.config = config
         self.chainState = chainState
-        self.currencyRate = currencyRate
+        self.session = session
         self.transactionViewModel = TransactionViewModel(
             transaction: transaction,
             config: config,
-            chainState: chainState,
-            currentWallet: currentWallet
+            currentAccount: currentAccount,
+            server: server,
+            token: token
         )
+        self.server = server
+        self.token = token
     }
 
     var title: String {
-        return "Transaction"
+        if transaction.state == .pending {
+            return R.string.localizable.pendingTransaction()
+        }
+        if transactionViewModel.direction == .incoming {
+            return R.string.localizable.incomingTransaction()
+        }
+        return R.string.localizable.outgoingTransaction()
     }
 
     var backgroundColor: UIColor {
@@ -55,7 +76,7 @@ struct TransactionDetailsViewModel {
     }
 
     var createdAtLabelTitle: String {
-        return NSLocalizedString("transaction.time.label.title", value: "Transaction time", comment: "")
+        return R.string.localizable.transactionTimeLabelTitle()
     }
 
     var detailsAvailable: Bool {
@@ -67,7 +88,7 @@ struct TransactionDetailsViewModel {
     }
 
     var detailsURL: URL? {
-        return ConfigExplorer(server: config.server).transactionURL(for: transaction.id)
+        return ConfigExplorer(server: server).transactionURL(for: transaction.id)
     }
 
     var transactionID: String {
@@ -75,26 +96,41 @@ struct TransactionDetailsViewModel {
     }
 
     var transactionIDLabelTitle: String {
-        return NSLocalizedString("transaction.id.label.title", value: "Transaction #", comment: "")
+        return R.string.localizable.transactionIdLabelTitle()
     }
 
-    var to: String {
-        guard let to = transaction.operation?.to else {
+    var address: String {
+        switch token.type {
+        case .coin:
+            if transactionViewModel.direction == .incoming {
+                return transaction.from
+            }
             return transaction.to
+        case .ERC20:
+            if transaction.toAddress == nil {
+                return EthereumAddress.zero.description
+            }
+            if transactionViewModel.direction == .incoming {
+                return transaction.from
+            }
+            return transaction.operation?.to ?? transaction.to
         }
-        return to
     }
 
-    var toLabelTitle: String {
-        return NSLocalizedString("transaction.to.label.title", value: "To", comment: "")
+    var addressTitle: String {
+        if transactionViewModel.direction == .incoming {
+            return R.string.localizable.transactionSenderLabelTitle()
+        } else {
+            return R.string.localizable.transactionSenderLabelTitle()
+        }
     }
 
-    var from: String {
-        return transaction.from
+    var nonce: String {
+        return String(transaction.nonce)
     }
 
-    var fromLabelTitle: String {
-        return NSLocalizedString("transaction.from.label.title", value: "From", comment: "")
+    var nonceTitle: String {
+        return R.string.localizable.nonce()
     }
 
     var gasViewModel: GasViewModel {
@@ -108,7 +144,7 @@ struct TransactionDetailsViewModel {
             }
         }()
 
-        return GasViewModel(fee: gasFee, symbol: config.server.symbol, currencyRate: currencyRate, formatter: fullFormatter)
+        return GasViewModel(fee: gasFee, server: server, store: session.tokensStorage, formatter: fullFormatter)
     }
 
     var gasFee: String {
@@ -117,7 +153,7 @@ struct TransactionDetailsViewModel {
     }
 
     var gasFeeLabelTitle: String {
-        return NSLocalizedString("transaction.gasFee.label.title", value: "Gas Fee", comment: "")
+        return R.string.localizable.networkFee()
     }
 
     var confirmation: String {
@@ -131,19 +167,32 @@ struct TransactionDetailsViewModel {
         return NSLocalizedString("transaction.confirmation.label.title", value: "Confirmation", comment: "")
     }
 
-    var blockNumber: String {
-        return String(transaction.blockNumber)
+    var amountString: String {
+        return transactionViewModel.amountFullText
     }
 
-    var blockNumberLabelTitle: String {
-        return NSLocalizedString("transaction.blockNumber.label.title", value: "Block #", comment: "")
+    var amountTextColor: UIColor {
+        return transactionViewModel.amountTextColor
     }
 
-    var amountAttributedString: NSAttributedString {
-        return transactionViewModel.fullAmountAttributedString
+    var monetaryAmountString: String? {
+        return monetaryAmountViewModel.amountText
     }
 
     var shareItem: URL? {
         return detailsURL
+    }
+
+    var statusImage: UIImage? {
+        return transactionViewModel.statusImage
+    }
+
+    var transactionHeaderViewModel: TransactionHeaderViewViewModel {
+        return TransactionHeaderViewViewModel(
+            amountString: amountString,
+            amountTextColor: amountTextColor,
+            monetaryAmountString: monetaryAmountString,
+            statusImage: statusImage
+        )
     }
 }
